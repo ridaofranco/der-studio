@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 import hmac
+import json
 import secrets
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
@@ -50,7 +51,8 @@ p{color:#b3261e;margin:0 0 12px}</style></head><body><form method="post">
 
 @app.before_request
 def _auth():
-    if not PASSWORD or request.path in ("/login",) or session.get("ok"):
+    if not PASSWORD or session.get("ok") or request.path in (
+            "/login", "/manifest.webmanifest") or request.path.startswith("/icono-"):
         return None
     if request.path.startswith("/api/"):
         return jsonify(error="Tu sesión venció. Recargá la página e ingresá la contraseña."), 401
@@ -79,6 +81,7 @@ def _job_dir(kind: str) -> Path:
 
 
 def _save_uploads(field: str) -> list[Path]:
+    """Archivos del formulario: los enviados directo y los ya subidos por partes (/api/subir)."""
     batch = UPLOAD_DIR / uuid.uuid4().hex[:10]
     batch.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -88,7 +91,37 @@ def _save_uploads(field: str) -> list[Path]:
         p = batch / f"{i:02d}_{secure_filename(f.filename) or 'archivo'}"
         f.save(p)
         paths.append(p)
+    for ref in request.form.getlist(field + "_subidos"):
+        up_id, _, name = ref.partition("/")
+        p = UPLOAD_DIR / "partes" / secure_filename(up_id) / secure_filename(name)
+        if p.is_file():
+            paths.append(p)
     return paths
+
+
+def _limpiar_subidas(max_horas: float = 24) -> None:
+    limite = time.time() - max_horas * 3600
+    for d in [*UPLOAD_DIR.glob("*"), *(UPLOAD_DIR / "partes").glob("*")]:
+        if d.is_dir() and d.name != "partes" and d.stat().st_mtime < limite:
+            import shutil
+            shutil.rmtree(d, ignore_errors=True)
+
+
+@app.post("/api/subir")
+def api_subir():
+    """Subida por partes: Cloudflare (plan gratis) corta los envíos de más de 100 MB."""
+    up_id = secure_filename(request.form.get("id", ""))
+    name = secure_filename(request.form.get("nombre", "")) or "archivo"
+    parte, total = int(request.form.get("parte", 0)), int(request.form.get("total", 1))
+    if not up_id or "trozo" not in request.files:
+        abort(400)
+    d = UPLOAD_DIR / "partes" / up_id
+    d.mkdir(parents=True, exist_ok=True)
+    if parte == 0:
+        _limpiar_subidas()
+    with open(d / name, "wb" if parte == 0 else "ab") as fh:
+        request.files["trozo"].save(fh)
+    return jsonify(ok=True, ref=f"{up_id}/{name}" if parte == total - 1 else None)
 
 
 def _url(p: Path) -> str:
@@ -296,6 +329,36 @@ def fuentes(rol):
     fs = brand.fonts()
     path = {"titulo": fs.title, "subtitulo": fs.subtitle, "cuerpo": fs.body}.get(rol) or abort(404)
     return send_from_directory(path.parent, path.name)
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return app.response_class(json.dumps({
+        "name": "DER Studio", "short_name": "DER Studio", "start_url": "/", "display": "standalone",
+        "background_color": "#333333", "theme_color": "#333333", "lang": "es",
+        "icons": [{"src": f"/icono-{n}.png", "sizes": f"{n}x{n}", "type": "image/png", "purpose": "any maskable"}
+                  for n in (192, 512)],
+    }), mimetype="application/manifest+json")
+
+
+@app.get("/icono-<int:size>.png")
+def icono(size):
+    """Ícono para la pantalla de inicio del celular: el logo sobre gris oscuro."""
+    from io import BytesIO
+
+    from flask import send_file
+    from PIL import Image
+    size = min(max(size, 32), 1024)
+    img = Image.new("RGB", (size, size), brand.DARK)
+    lg = brand.logo("on_dark")
+    lg = lg.resize((int(size * 0.62), int(lg.height * size * 0.62 / lg.width)), Image.LANCZOS)
+    if lg.height > size * 0.62:
+        lg = lg.resize((int(lg.width * size * 0.62 / lg.height), int(size * 0.62)), Image.LANCZOS)
+    img.paste(lg, ((size - lg.width) // 2, (size - lg.height) // 2), lg)
+    buf = BytesIO()
+    img.save(buf, "PNG")
+    buf.seek(0)
+    return send_file(buf, mimetype="image/png", max_age=3600)
 
 
 @app.get("/logo.png")

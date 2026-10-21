@@ -26,6 +26,12 @@ from urllib.parse import quote, urlencode
 
 from PIL import Image, ImageDraw, ImageOps
 
+try:  # fotos HEIC del iPhone
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except ImportError:
+    pass
+
 from . import brand
 from .brand import DARK, DARK_RGB, LIGHT, ORANGE, WHITE
 

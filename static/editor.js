@@ -92,6 +92,8 @@
         <div class="ed-sel" hidden>
           <h3>Seleccionado: <span class="ed-selname"></span></h3>
           <div class="ed-text">
+            <label>Texto</label>
+            <textarea data-p="text" rows="3"></textarea>
             <label>Tipografía</label>
             <select data-p="role"><option value="title">Títulos (Netron)</option><option value="subtitle">Subtítulos (Articulat)</option><option value="body">Texto (Jost)</option></select>
             <label>Tamaño <output></output></label>
@@ -120,7 +122,7 @@
             <button data-a="del" class="ed-danger">Eliminar</button>
           </div>
         </div>
-        <p class="ed-tip">Arrastrá para mover · esquinas para agrandar · <b>doble clic en un texto para escribir</b>.
+        <p class="ed-tip">Arrastrá para mover · esquinas para agrandar · <b>doble clic (o el campo "Texto") para escribir</b>.
           Para resaltar palabras: seleccionalas mientras escribís y tocá un color.</p>
         <div class="ed-foot">
           <button data-a="cancel" class="ed-sec">Cancelar</button>
@@ -139,7 +141,9 @@
     const canvas = new fabric.Canvas(root.querySelector("canvas"), {
       preserveObjectStacking: true, selectionColor: "rgba(255,92,0,.08)", selectionBorderColor: BRAND.naranja,
     });
-    fabric.Object.prototype.set({ borderColor: BRAND.naranja, cornerColor: BRAND.naranja, cornerStyle: "circle", transparentCorners: false, cornerSize: 12 });
+    const touch = matchMedia("(pointer: coarse)").matches;
+    fabric.Object.prototype.set({ borderColor: BRAND.naranja, cornerColor: BRAND.naranja, cornerStyle: "circle", transparentCorners: false,
+      cornerSize: touch ? 22 : 12, touchCornerSize: 44, padding: touch ? 6 : 0 });
     ed = { canvas, design, root, history: [], future: [], restoring: false };
     $(".ed-name").textContent = design.name;
 
@@ -207,6 +211,7 @@
       $(".ed-logo").hidden = !isLogo;
       $(".ed-color").hidden = isLogo;
       if (isText) {
+        if (document.activeElement !== $("[data-p=text]")) $("[data-p=text]").value = o.text;
         $("[data-p=role]").value = o.role || "body";
         $("[data-p=fontSize]").value = o.fontSize;
         $(".ed-text output").textContent = Math.round(o.fontSize) + " px";
@@ -218,6 +223,8 @@
     }
 
     const active = () => canvas.getActiveObject();
+    $("[data-p=text]").oninput = e => { const o = active(); if (!o || o.type !== "textbox") return; o.set("text", e.target.value); o.initDimensions(); canvas.requestRenderAll(); };
+    $("[data-p=text]").onchange = () => snapshot();
     $("[data-p=role]").onchange = e => { const o = active(); o.set({ role: e.target.value, fontFamily: FAMILIES[e.target.value] }); o.initDimensions(); canvas.requestRenderAll(); snapshot(); };
     $("[data-p=fontSize]").oninput = e => { const o = active(); o.set("fontSize", +e.target.value); o.initDimensions(); $(".ed-text output").textContent = e.target.value + " px"; canvas.requestRenderAll(); };
     $("[data-p=fontSize]").onchange = () => snapshot();

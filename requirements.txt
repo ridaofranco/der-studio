@@ -2,3 +2,4 @@ flask>=3.0
 pillow>=10.0
 numpy>=1.26
 imageio-ffmpeg>=0.5
+pillow-heif>=0.16

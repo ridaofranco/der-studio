@@ -2,8 +2,14 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>DER Studio</title>
+<meta name="theme-color" content="#333333">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="DER Studio">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icono-180.png">
+<link rel="icon" href="/icono-192.png">
 <style>
   @font-face { font-family: "DER Titulo"; src: url("/fuentes/titulo"); }
   @font-face { font-family: "DER Sub"; src: url("/fuentes/subtitulo"); }
@@ -122,7 +128,27 @@
   .ed-foot { margin-top: auto; display: flex; gap: 8px; padding-top: 12px; }
   .ed-foot button { flex: 1; padding: 12px; font: 14px "DER Titulo", sans-serif !important; text-transform: uppercase; }
   .ed-prim { background: var(--naranja) !important; color: #fff !important; border-color: var(--naranja) !important; }
-  @media (max-width: 860px) { .ed { grid-template-columns: 1fr; grid-template-rows: 58vh 1fr; } }
+  .ed-side textarea { width: 100%; min-height: 64px; font-size: 15px; }
+  @media (max-width: 860px) {
+    .ed { grid-template-columns: 1fr; grid-template-rows: 55vh 1fr; height: 100dvh; }
+    .ed-side { padding: 12px 14px 0; }
+    .ed-side textarea, .ed-side select { font-size: 16px; }
+    .ed-foot { position: sticky; bottom: 0; background: #fff; padding: 10px 0 calc(10px + env(safe-area-inset-bottom)); margin-top: 8px; border-top: 1px solid var(--borde); }
+    .ed-tip { display: none; }
+  }
+  .pieza figcaption .acc { display: flex; gap: 10px; }
+  @media (max-width: 600px) {
+    main { padding: 14px 10px 40px; }
+    header { padding: 12px 14px; gap: 10px; }
+    header img { height: 26px; }
+    nav { width: 100%; justify-content: space-between; }
+    nav button { padding: 8px 6px; font-size: 14px; }
+    form, .resultado { padding: 16px; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .pieza .img::after { opacity: 1; padding: 4px 8px; font-size: 11px; }
+    .row { grid-template-columns: 1fr; gap: 0; }
+    input[type=text], textarea, select, input[type=number] { font-size: 16px; } /* evita el zoom de iOS */
+  }
 </style>
 </head>
 <body>
@@ -337,14 +363,49 @@ function showError(box, msg) { box.innerHTML = `<div class="error">${msg}</div>`
 $("#fGraficos").onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData(e.target), box = $("#rGraficos"), btn = $("button[type=submit]", e.target);
-  files.fotosIn.forEach(f => fd.append("fotos", f));
-  btn.disabled = true; box.innerHTML = '<div class="progreso"><div></div></div><p class="hint">Generando…</p>';
+  btn.disabled = true; box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="gEstado">Subiendo fotos…</p>';
   try {
+    (await subirArchivos(files.fotosIn, t => $("#gEstado").textContent = t)).forEach(ref => fd.append("fotos_subidos", ref));
+    $("#gEstado").textContent = "Generando…";
     const r = await fetch("/api/graficos", { method: "POST", body: fd }), j = await r.json();
     if (!r.ok) return showError(box, j.error);
     mostrarPiezas(box, j.lote, j.disenos);
   } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
 };
+
+/** Sube los archivos de a uno y en partes de 40 MB (Cloudflare corta los envíos de más de 100 MB). */
+async function subirArchivos(lista, avisar) {
+  const PARTE = 40 * 1024 * 1024, refs = [];
+  const total = lista.reduce((a, f) => a + f.size, 0) || 1;
+  let enviados = 0;
+  for (const [i, f] of lista.entries()) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const partes = Math.max(1, Math.ceil(f.size / PARTE));
+    for (let p = 0; p < partes; p++) {
+      const fd = new FormData();
+      fd.append("id", id); fd.append("nombre", f.name || `archivo-${i}`);
+      fd.append("parte", p); fd.append("total", partes);
+      fd.append("trozo", f.slice(p * PARTE, (p + 1) * PARTE), f.name);
+      const r = await fetch("/api/subir", { method: "POST", body: fd });
+      if (!r.ok) throw new Error(r.status === 401 ? "Tu sesión venció: recargá la página." : "No se pudo subir " + f.name);
+      const j = await r.json();
+      enviados += Math.min(PARTE, f.size - p * PARTE);
+      avisar(`Subiendo ${i + 1} de ${lista.length}… ${Math.round(enviados / total * 100)}%`);
+      if (j.ref) refs.push(j.ref);
+    }
+  }
+  return refs;
+}
+
+async function compartir(url, nombre, tipo) {
+  try {
+    const blob = await (await fetch(url)).blob();
+    const file = new File([blob], nombre, { type: tipo });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) await navigator.share({ files: [file] });
+    else window.open(url, "_blank");
+  } catch (err) { if (err.name !== "AbortError") alert("No se pudo compartir: " + err.message); }
+}
+const puedeCompartir = !!(navigator.canShare && window.isSecureContext);
 
 async function guardarPieza(lote, d, blob) {
   const fd = new FormData();
@@ -360,12 +421,14 @@ async function mostrarPiezas(box, lote, disenos) {
     <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla: mover, cambiar textos, colores o el logo.</p>
     <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
       <div class="img">Componiendo…</div>
-      <figcaption><span>${d.name.replace("DER-", "")}</span><a download="${d.name}.jpg" hidden>Descargar</a></figcaption></figure>`).join("")}</div>`;
+      <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a> <a download="${d.name}.jpg" hidden class="dl">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
   const cards = box.querySelectorAll(".pieza");
   const pintar = (i, url) => {
     const c = cards[i];
     c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
-    const a = c.querySelector("a"); a.href = url; a.hidden = false;
+    const a = c.querySelector("a.dl"); a.href = url; a.hidden = false;
+    const sh = c.querySelector("a.share");
+    if (puedeCompartir) { sh.hidden = false; sh.onclick = ev => { ev.preventDefault(); compartir(url.split("?")[0], disenos[i].name + ".jpg", "image/jpeg"); }; }
   };
   for (const [i, d] of disenos.entries()) {
     try { pintar(i, await guardarPieza(lote, d, await DEREditor.render(d))); }
@@ -382,10 +445,11 @@ $("#fReel").onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData(e.target), box = $("#rReel"), btn = $("button[type=submit]", e.target);
   if (!fd.has("marca_agua")) fd.set("marca_agua", "0");
-  files.reelIn.forEach(f => fd.append("archivos", f));
   btn.disabled = true;
   box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="reelEstado">Subiendo archivos…</p>';
   try {
+    (await subirArchivos(files.reelIn, t => $("#reelEstado").textContent = t)).forEach(ref => fd.append("archivos_subidos", ref));
+    $("#reelEstado").textContent = "Preparando el reel…";
     const r = await fetch("/api/reel", { method: "POST", body: fd }), j = await r.json();
     if (!r.ok) { btn.disabled = false; return showError(box, j.error); }
     const t0 = Date.now();
@@ -398,7 +462,9 @@ $("#fReel").onsubmit = async e => {
       btn.disabled = false;
       if (s.estado === "error") return showError(box, s.error);
       box.innerHTML = `<video class="final" src="${s.archivo}" controls playsinline></video>
-        <div class="acciones" style="justify-content:center"><a class="prim" href="${s.archivo}" download>Descargar reel (.mp4)</a></div>`;
+        <div class="acciones" style="justify-content:center"><a class="prim" href="${s.archivo}" download>Descargar reel (.mp4)</a>
+        ${puedeCompartir ? `<a href="#" id="shReel">Compartir</a>` : ""}</div>`;
+      if (puedeCompartir) $("#shReel").onclick = ev => { ev.preventDefault(); compartir(s.archivo, s.archivo.split("/").pop(), "video/mp4"); };
     };
     poll();
   } catch (err) { btn.disabled = false; showError(box, sinConexion(err)); }
