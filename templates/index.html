@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DER Studio</title>
+<style>
+  @font-face { font-family: "DER Titulo"; src: url("/fuentes/titulo"); }
+  @font-face { font-family: "DER Sub"; src: url("/fuentes/subtitulo"); }
+  @font-face { font-family: "DER Cuerpo"; src: url("/fuentes/cuerpo"); }
+  :root {
+    --naranja: #ff5c00; --oscuro: #333333; --claro: #f0f0f0;
+    --borde: #d9d9d9; --texto-suave: #6b6b6b; --radio: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--claro); color: var(--oscuro); font: 16px/1.45 "DER Cuerpo", system-ui, sans-serif; }
+  header { background: var(--oscuro); color: var(--claro); padding: 18px 24px; display: flex; align-items: center; gap: 16px; }
+  header img { height: 34px; }
+  header h1 { font: 20px "DER Titulo", sans-serif; letter-spacing: .04em; margin: 0; text-transform: uppercase; }
+  header h1 span { color: var(--naranja); }
+  nav { display: flex; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+  nav button { background: transparent; color: var(--claro); border: 0; padding: 10px 14px; font: 15px "DER Sub", sans-serif; cursor: pointer; border-bottom: 3px solid transparent; }
+  nav button.on { border-color: var(--naranja); color: #fff; }
+  main { max-width: 1200px; margin: 0 auto; padding: 24px 16px 60px; }
+  .aviso { background: #fff3eb; border-left: 4px solid var(--naranja); padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 14px; }
+  .aviso:empty { display: none; }
+  .panel { display: none; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); gap: 24px; }
+  .panel.on { display: grid; }
+  @media (max-width: 860px) { .panel { grid-template-columns: 1fr; } header { flex-wrap: wrap; } nav { margin-left: 0; } }
+  form, .resultado { background: #fff; border-radius: var(--radio); padding: 20px; }
+  h2 { font: 17px "DER Titulo", sans-serif; text-transform: uppercase; margin: 0 0 16px; }
+  h2::before { content: ""; display: inline-block; width: 28px; height: 4px; background: var(--naranja); vertical-align: middle; margin-right: 10px; }
+  label { display: block; font: 14px "DER Sub", sans-serif; margin: 14px 0 6px; }
+  label small { color: var(--texto-suave); font-family: "DER Cuerpo"; }
+  input[type=text], textarea, select, input[type=number] {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 8px; font: inherit; background: #fff; color: inherit;
+  }
+  textarea { min-height: 80px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--naranja); outline-offset: -1px; border-color: transparent; }
+  .drop { border: 2px dashed var(--borde); border-radius: var(--radio); padding: 22px; text-align: center; cursor: pointer; color: var(--texto-suave); transition: .15s; }
+  .drop.over, .drop:hover { border-color: var(--naranja); color: var(--oscuro); background: #fff8f3; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; margin-top: 10px; }
+  .thumbs div { position: relative; aspect-ratio: 1; background: var(--claro); border-radius: 6px; overflow: hidden; font-size: 11px; display: grid; place-items: center; }
+  .thumbs img, .thumbs video { width: 100%; height: 100%; object-fit: cover; }
+  .thumbs button { position: absolute; top: 2px; right: 2px; border: 0; background: var(--oscuro); color: #fff; width: 20px; height: 20px; border-radius: 50%; cursor: pointer; line-height: 1; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips label { margin: 0; display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; border: 1px solid var(--borde); border-radius: 999px; cursor: pointer; font-size: 14px; }
+  .chips input { accent-color: var(--naranja); }
+  .chips label:has(input:checked) { border-color: var(--naranja); background: #fff3eb; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .check { display: flex; gap: 8px; align-items: center; font-family: "DER Cuerpo"; }
+  .check input { accent-color: var(--naranja); width: 18px; height: 18px; }
+  .btn { margin-top: 20px; width: 100%; padding: 14px; background: var(--naranja); color: #fff; border: 0; border-radius: 8px; font: 16px "DER Titulo", sans-serif; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
+  .btn:disabled { opacity: .6; cursor: wait; }
+  .btn.sec { background: var(--oscuro); }
+  .resultado { min-height: 300px; }
+  .vacio { color: var(--texto-suave); text-align: center; padding: 80px 20px; }
+  .grid { align-items: start; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .grid a { display: block; border-radius: 8px; overflow: hidden; background: var(--claro); }
+  .grid img { width: 100%; display: block; }
+  .acciones { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .acciones a { padding: 10px 16px; background: var(--oscuro); color: #fff; border-radius: 8px; text-decoration: none; font: 14px "DER Sub", sans-serif; }
+  .acciones a.prim { background: var(--naranja); }
+  video.final { width: 100%; max-width: 380px; border-radius: 10px; display: block; margin: 0 auto 16px; background: #000; }
+  .progreso { height: 6px; background: var(--claro); border-radius: 3px; overflow: hidden; margin: 20px 0 8px; }
+  .progreso div { height: 100%; width: 30%; background: var(--naranja); animation: ir 1.2s infinite ease-in-out; }
+  @keyframes ir { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+  .error { color: #b3261e; background: #fdecea; padding: 12px; border-radius: 8px; white-space: pre-wrap; font-size: 14px; }
+  .hint { font-size: 13px; color: var(--texto-suave); margin-top: 6px; }
+  .kit { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .kit .card { background: #fff; padding: 18px; border-radius: var(--radio); }
+  .sw { display: flex; gap: 8px; }
+  .sw div { flex: 1; height: 70px; border-radius: 8px; display: flex; align-items: end; padding: 6px; font-size: 12px; }
+  .ok { color: #1e7d32; } .falta { color: #b3261e; }
+  /* selector de logo */
+  .logopick { display: flex; flex-wrap: wrap; gap: 8px; }
+  .logopick label { margin: 0; flex: 0 0 auto; width: 92px; cursor: pointer; text-align: center; font: 11px "DER Cuerpo", sans-serif; color: var(--texto-suave); }
+  .logopick input { position: absolute; opacity: 0; pointer-events: none; }
+  .logopick .lg { height: 58px; border-radius: 8px; border: 2px solid var(--borde); display: flex; align-items: center; justify-content: center; padding: 6px; margin-bottom: 4px;
+    background: repeating-conic-gradient(#3a3a3a 0 25%, #333 0 50%) 0 0 / 14px 14px; color: #fff; font: 12px "DER Sub", sans-serif; }
+  .logopick .lg img { max-width: 100%; max-height: 44px; }
+  .logopick input:checked + .lg { border-color: var(--naranja); box-shadow: 0 0 0 2px #ffd3b8; }
+  .logopick span.n { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* galería de logos en brand kit */
+  .kitlogos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .kitlogos figure { margin: 0; position: relative; }
+  .kitlogos .lg { height: 90px; border-radius: 8px; display: flex; align-items: center; justify-content: center; padding: 10px;
+    background: repeating-conic-gradient(#3a3a3a 0 25%, #333 0 50%) 0 0 / 16px 16px; }
+  .kitlogos .lg.claro { background: repeating-conic-gradient(#fff 0 25%, #eee 0 50%) 0 0 / 16px 16px; border: 1px solid var(--borde); }
+  .kitlogos img { max-width: 100%; max-height: 70px; width: auto; height: auto; object-fit: contain; }
+  .kitlogos figcaption { font-size: 12px; color: var(--texto-suave); margin-top: 4px; word-break: break-all; }
+  .kitlogos button { position: absolute; top: 6px; right: 6px; border: 0; width: 26px; height: 26px; border-radius: 50%; background: #fff; color: var(--oscuro); cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+  .kitlogos .fondo { position: absolute; top: 6px; left: 6px; border: 0; padding: 3px 7px; border-radius: 10px; font-size: 11px; background: #fff; cursor: pointer; }
+  /* piezas generadas */
+  .pieza { margin: 0; }
+  .pieza .img { position: relative; border-radius: 8px; overflow: hidden; background: var(--claro); cursor: pointer; min-height: 120px; display: grid; place-items: center; color: var(--texto-suave); font-size: 13px; }
+  .pieza img { width: 100%; display: block; }
+  .pieza .img::after { content: "✎ Editar"; position: absolute; inset: auto 8px 8px auto; background: var(--naranja); color: #fff; padding: 6px 12px; border-radius: 6px; font: 13px "DER Sub", sans-serif; opacity: 0; transition: .15s; }
+  .pieza .img:hover::after { opacity: 1; }
+  .pieza figcaption { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-size: 12px; color: var(--texto-suave); padding: 6px 2px; }
+  .pieza figcaption a { color: var(--naranja); font-family: "DER Sub"; text-decoration: none; white-space: nowrap; }
+  .acciones a.off { pointer-events: none; opacity: .5; }
+  /* editor */
+  .ed { position: fixed; inset: 0; z-index: 50; background: #1f1f1f; display: grid; grid-template-columns: 1fr 300px; }
+  .ed-stage { display: grid; place-items: center; overflow: hidden; background: repeating-conic-gradient(#262626 0 25%, #222 0 50%) 0 0 / 24px 24px; }
+  .ed-stage .canvas-container { box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .ed-side { background: #fff; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .ed-side h3 { font: 13px "DER Titulo", sans-serif; text-transform: uppercase; margin: 14px 0 6px; }
+  .ed-side label { margin: 8px 0 4px; font-size: 13px; }
+  .ed-side select, .ed-side input[type=range] { width: 100%; }
+  .ed-side input[type=range] { accent-color: var(--naranja); }
+  .ed-top { display: flex; gap: 6px; align-items: center; }
+  .ed-name { font-size: 12px; color: var(--texto-suave); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ed-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ed-side button { padding: 8px 10px; border: 1px solid var(--borde); background: #fff; border-radius: 7px; cursor: pointer; font: 13px "DER Sub", sans-serif; color: var(--oscuro); }
+  .ed-side button:hover { border-color: var(--naranja); }
+  .ed-sw { display: flex; gap: 8px; }
+  .ed-sw button { width: 36px; height: 36px; border-radius: 50%; padding: 0; border: 2px solid #ccc; }
+  .ed-sel { border-top: 1px solid var(--borde); margin-top: 10px; padding-top: 4px; }
+  .ed-danger { color: #b3261e !important; }
+  .ed-tip { font-size: 12px; color: var(--texto-suave); margin-top: 14px; }
+  .ed-foot { margin-top: auto; display: flex; gap: 8px; padding-top: 12px; }
+  .ed-foot button { flex: 1; padding: 12px; font: 14px "DER Titulo", sans-serif !important; text-transform: uppercase; }
+  .ed-prim { background: var(--naranja) !important; color: #fff !important; border-color: var(--naranja) !important; }
+  @media (max-width: 860px) { .ed { grid-template-columns: 1fr; grid-template-rows: 58vh 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo.png" alt="DER">
+  <h1><span>Studio</span></h1>
+  <nav>
+    <button class="on" data-tab="graficos">Posteos e historias</button>
+    <button data-tab="reels">Reels</button>
+    <button data-tab="kit">Brand kit</button>
+  </nav>
+</header>
+
+<main>
+  <div class="aviso" id="update" hidden></div>
+  <div class="aviso" id="aviso"></div>
+
+  <!-- POSTEOS E HISTORIAS -->
+  <section class="panel on" id="graficos">
+    <form id="fGraficos">
+      <h2>Contenido</h2>
+      <label>Fotos del evento <small>(una por pieza; con varias se arma un carrusel)</small></label>
+      <div class="drop" data-input="fotosIn">Arrastrá fotos acá o hacé clic</div>
+      <input type="file" id="fotosIn" accept="image/*" multiple hidden>
+      <div class="thumbs" id="fotosThumbs"></div>
+
+      <label>Título <small>— poné *entre asteriscos* lo que va en naranja</small></label>
+      <input type="text" name="titulo" placeholder="Gracias *Paraguay* por una noche épica">
+      <label>Subtítulo</label>
+      <input type="text" name="subtitulo" placeholder="Accesos & acreditaciones · Asunción 2026">
+      <label>Texto</label>
+      <textarea name="cuerpo" placeholder="Un texto corto (opcional)"></textarea>
+
+      <label>Plantilla</label>
+      <div class="chips">
+        {% for key, name in templates.items() %}
+        <label><input type="radio" name="plantilla" value="{{ key }}" {% if loop.first %}checked{% endif %}> {{ name }}</label>
+        {% endfor %}
+      </div>
+
+      <label>Formatos</label>
+      <div class="chips">
+        <label><input type="checkbox" name="formatos" value="post" checked> Post 4:5</label>
+        <label><input type="checkbox" name="formatos" value="cuadrado"> Post 1:1</label>
+        <label><input type="checkbox" name="formatos" value="historia" checked> Historia 9:16</label>
+      </div>
+
+      <label>Logo</label>
+      <div class="logopick" data-name="logo"></div>
+      <div class="row">
+        <div>
+          <label>Encuadre de la foto</label>
+          <select name="enfoque"><option value="centro">Centro</option><option value="arriba">Arriba</option><option value="abajo">Abajo</option></select>
+        </div>
+        <div>
+          <label>Carrusel</label>
+          <label class="check"><input type="checkbox" name="texto_todas" value="1"> Texto en todas</label>
+        </div>
+      </div>
+      <button class="btn" type="submit">Generar piezas</button>
+    </form>
+    <div class="resultado" id="rGraficos"><div class="vacio">Las piezas aparecen acá.</div></div>
+  </section>
+
+  <!-- REELS -->
+  <section class="panel" id="reels">
+    <form id="fReel">
+      <h2>Reel</h2>
+      <label>Videos (y fotos) <small>— en el orden en que van</small></label>
+      <div class="drop" data-input="reelIn">Arrastrá videos acá o hacé clic</div>
+      <input type="file" id="reelIn" accept="video/*,image/*" multiple hidden>
+      <div class="thumbs" id="reelThumbs"></div>
+      <p class="hint">Los videos horizontales se centran sobre un fondo desenfocado. Al final siempre va el cierre con el logo.</p>
+
+      <label>Título de apertura <small>(opcional)</small></label>
+      <input type="text" name="titulo" placeholder="Así vivimos el *Event Hub*">
+      <label>Subtítulo <small>(opcional)</small></label>
+      <input type="text" name="subtitulo" placeholder="Asunción · Octubre 2026">
+
+      <label>Música de fondo</label>
+      <select name="musica" id="musicaSel">
+        {% for s in music_styles %}<option value="auto:{{ s }}">Genérica · {{ {"energico": "Enérgica", "corporativo": "Corporativa", "suave": "Suave"}.get(s, s) }}</option>{% endfor %}
+        <option value="none">Sin música</option>
+      </select>
+
+      <div class="row">
+        <div>
+          <label>Máx. segundos por clip</label>
+          <input type="number" name="max_clip" value="5" min="0" step="0.5">
+        </div>
+        <div>
+          <label>Segundos por foto</label>
+          <input type="number" name="seg_foto" value="3" min="1" step="0.5">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Transición</label>
+          <select name="transicion">
+            <option value="fade">Fundido</option>
+            <option value="slideleft">Deslizar</option>
+            <option value="smoothup">Subir</option>
+            <option value="circleopen">Círculo</option>
+            <option value="none">Corte seco</option>
+          </select>
+        </div>
+        <div>
+          <label>Volumen música</label>
+          <input type="number" name="volumen" value="0.9" min="0" max="1.5" step="0.1">
+        </div>
+      </div>
+      <label>Logo</label>
+      <div class="logopick" data-name="logo"></div>
+      <label class="check"><input type="checkbox" name="audio_original" value="1"> Mantener el audio original de los videos</label>
+      <label class="check"><input type="checkbox" name="marca_agua" value="1" checked> Logo chico arriba durante el reel</label>
+      <button class="btn" type="submit">Generar reel</button>
+    </form>
+    <div class="resultado" id="rReel"><div class="vacio">El reel aparece acá.</div></div>
+  </section>
+
+  <!-- BRAND KIT -->
+  <section class="panel" id="kit" style="grid-template-columns: 1fr;">
+    <div class="kit">
+      <div class="card">
+        <h2>Paleta</h2>
+        <div class="sw">
+          <div style="background:#ff5c00;color:#fff">#ff5c00</div>
+          <div style="background:#333333;color:#f0f0f0">#333333</div>
+          <div style="background:#f0f0f0;border:1px solid #ddd">#f0f0f0</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Tipografías</h2>
+        <div id="kitFuentes">…</div>
+      </div>
+      <div class="card" style="grid-column: 1 / -1">
+        <h2>Logos</h2>
+        <div id="kitLogos" class="kitlogos"></div>
+        <div class="drop" id="logoDrop">Arrastrá uno o varios logos (PNG con fondo transparente) o hacé clic</div>
+        <input type="file" id="logoIn" accept="image/png,image/webp" multiple hidden>
+        <p class="hint">Podés cargar todas las versiones (naranja, gris claro, gris oscuro, otras marcas…). En "Automático" la app elige la versión DER según el fondo usando el nombre del archivo (ej. LOGO-DER-NARANJA-Y-GRIS-CLARO.png).</p>
+      </div>
+      <div class="card">
+        <h2>Música propia</h2>
+        <div id="kitMusica">…</div>
+        <p class="hint">Temas libres de derechos (mp3/wav). Aparecen en el selector de música del reel.</p>
+      </div>
+    </div>
+    <form id="fKit" style="margin-top:20px;max-width:520px">
+      <h2>Subir al brand kit</h2>
+      <label>Tipo</label>
+      <select name="tipo">
+        <option value="fuentes">Tipografías (TTF / OTF / ZIP)</option>
+        <option value="musica">Música (MP3 / WAV)</option>
+      </select>
+      <label>Archivos</label>
+      <input type="file" name="archivos" multiple>
+      <button class="btn sec" type="submit">Subir</button>
+    </form>
+  </section>
+</main>
+
+<script src="/static/vendor/fabric.min.js"></script>
+<script src="/static/editor.js"></script>
+<script>
+if (location.protocol === "file:") {
+  document.body.innerHTML = `<div style="max-width:560px;margin:80px auto;padding:32px;background:#fff;border-radius:12px;border-left:6px solid #ff5c00;font:17px/1.5 system-ui,sans-serif;color:#333">
+    <h2 style="margin-top:0">Así no se abre DER Studio</h2>
+    <p>Abriste el archivo <b>index.html</b> directamente: es solo el diseño de la pantalla y no puede generar nada.</p>
+    <ol><li>Cerrá esta pestaña.</li><li>En la carpeta <b>der-studio</b>, hacé doble clic en <b>iniciar.bat</b> (o en el acceso directo <b>DER Studio</b> del escritorio).</li>
+    <li>Esperá a que se abra solo el navegador en <b>http://localhost:5050</b>.</li></ol>
+    <p>Si la ventana negra muestra un error, mandale una captura a Claude.</p></div>`;
+  throw new Error("abierto como archivo");
+}
+const $ = (s, el = document) => el.querySelector(s);
+const files = { fotosIn: [], reelIn: [] };
+
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button, .panel").forEach(x => x.classList.remove("on"));
+  b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
+});
+
+function renderThumbs(id) {
+  const box = $(id === "fotosIn" ? "#fotosThumbs" : "#reelThumbs");
+  box.innerHTML = "";
+  files[id].forEach((f, i) => {
+    const d = document.createElement("div");
+    const url = URL.createObjectURL(f);
+    d.innerHTML = f.type.startsWith("video") ? `<video src="${url}" muted></video>`
+               : f.type.startsWith("image") ? `<img src="${url}">` : f.name;
+    const x = document.createElement("button"); x.type = "button"; x.textContent = "×";
+    x.onclick = () => { files[id].splice(i, 1); renderThumbs(id); };
+    d.appendChild(x); box.appendChild(d);
+  });
+}
+document.querySelectorAll(".drop[data-input]").forEach(z => {
+  const input = $("#" + z.dataset.input);
+  z.onclick = () => input.click();
+  input.onchange = () => { files[input.id].push(...input.files); input.value = ""; renderThumbs(input.id); };
+  z.ondragover = e => { e.preventDefault(); z.classList.add("over"); };
+  z.ondragleave = () => z.classList.remove("over");
+  z.ondrop = e => { e.preventDefault(); z.classList.remove("over"); files[input.id].push(...e.dataTransfer.files); renderThumbs(input.id); };
+});
+
+function sinConexion(err) {
+  return String(err).includes("fetch")
+    ? "No me puedo comunicar con DER Studio. ¿Cerraste la ventana negra? Volvé a abrir iniciar.bat (o el acceso directo del escritorio) y probá de nuevo."
+    : err;
+}
+function showError(box, msg) { box.innerHTML = `<div class="error">${msg}</div>`; }
+
+$("#fGraficos").onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target), box = $("#rGraficos"), btn = $("button[type=submit]", e.target);
+  files.fotosIn.forEach(f => fd.append("fotos", f));
+  btn.disabled = true; box.innerHTML = '<div class="progreso"><div></div></div><p class="hint">Generando…</p>';
+  try {
+    const r = await fetch("/api/graficos", { method: "POST", body: fd }), j = await r.json();
+    if (!r.ok) return showError(box, j.error);
+    mostrarPiezas(box, j.lote, j.disenos);
+  } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
+};
+
+async function guardarPieza(lote, d, blob) {
+  const fd = new FormData();
+  fd.append("lote", lote); fd.append("nombre", d.name);
+  fd.append("imagen", blob, d.name + ".jpg");
+  fd.append("capas", JSON.stringify(d));
+  const r = await fetch("/api/guardar", { method: "POST", body: fd });
+  return (await r.json()).url + "?t=" + Date.now();
+}
+
+async function mostrarPiezas(box, lote, disenos) {
+  box.innerHTML = `<div class="acciones"><a class="prim off" id="zipLink" href="/api/zip/${lote}">Preparando…</a></div>
+    <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla: mover, cambiar textos, colores o el logo.</p>
+    <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
+      <div class="img">Componiendo…</div>
+      <figcaption><span>${d.name.replace("DER-", "")}</span><a download="${d.name}.jpg" hidden>Descargar</a></figcaption></figure>`).join("")}</div>`;
+  const cards = box.querySelectorAll(".pieza");
+  const pintar = (i, url) => {
+    const c = cards[i];
+    c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+    const a = c.querySelector("a"); a.href = url; a.hidden = false;
+  };
+  for (const [i, d] of disenos.entries()) {
+    try { pintar(i, await guardarPieza(lote, d, await DEREditor.render(d))); }
+    catch (err) { cards[i].querySelector(".img").textContent = "Error al componer: " + err; }
+    cards[i].querySelector(".img").onclick = () => DEREditor.open(d, {
+      logos: ESTADO.logos,
+      onSave: async (dd, blob) => pintar(i, await guardarPieza(lote, dd, blob)),
+    });
+  }
+  const z = $("#zipLink"); z.classList.remove("off"); z.textContent = "Descargar todo (.zip)";
+}
+
+$("#fReel").onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target), box = $("#rReel"), btn = $("button[type=submit]", e.target);
+  if (!fd.has("marca_agua")) fd.set("marca_agua", "0");
+  files.reelIn.forEach(f => fd.append("archivos", f));
+  btn.disabled = true;
+  box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="reelEstado">Subiendo archivos…</p>';
+  try {
+    const r = await fetch("/api/reel", { method: "POST", body: fd }), j = await r.json();
+    if (!r.ok) { btn.disabled = false; return showError(box, j.error); }
+    const t0 = Date.now();
+    const poll = async () => {
+      const s = await (await fetch("/api/reel/" + j.job)).json();
+      if (s.estado === "procesando") {
+        $("#reelEstado").textContent = `Editando el reel… ${Math.round((Date.now() - t0) / 1000)} s`;
+        return setTimeout(poll, 1500);
+      }
+      btn.disabled = false;
+      if (s.estado === "error") return showError(box, s.error);
+      box.innerHTML = `<video class="final" src="${s.archivo}" controls playsinline></video>
+        <div class="acciones" style="justify-content:center"><a class="prim" href="${s.archivo}" download>Descargar reel (.mp4)</a></div>`;
+    };
+    poll();
+  } catch (err) { btn.disabled = false; showError(box, sinConexion(err)); }
+};
+
+let ESTADO = { logos: [] };
+const logoSrc = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");
+const sinExt = n => n.replace(/\.(png|webp)$/i, "");
+
+function pintarSelectoresLogo(logos) {
+  document.querySelectorAll(".logopick").forEach(box => {
+    const prev = box.querySelector("input:checked")?.value || "auto";
+    const items = [["auto", `<div class="lg">Automático</div>`, "Según el fondo"],
+      ...logos.map(n => [n, `<div class="lg"><img src="${logoSrc("file:" + n)}" alt=""></div>`, sinExt(n)])];
+    box.innerHTML = items.map(([v, html, t]) => `<label title="${t}"><input type="radio" name="${box.dataset.name}" value="${v}"${v === prev ? " checked" : ""}>${html}<span class="n">${t}</span></label>`).join("");
+    if (!box.querySelector("input:checked")) box.querySelector("input").checked = true;
+  });
+}
+
+function pintarKitLogos(logos) {
+  const box = $("#kitLogos");
+  if (!logos.length) { box.innerHTML = '<p class="hint" style="grid-column:1/-1">Todavía no cargaste logos: se usa un logotipo de texto provisorio.</p>'; return; }
+  box.innerHTML = logos.map(n => `<figure><div class="lg"><img src="${logoSrc("file:" + n)}?t=${Date.now()}" alt=""></div>
+    <button class="fondo" title="Ver sobre fondo claro u oscuro">Fondo</button>
+    <button title="Eliminar" data-del="${n}">×</button><figcaption>${sinExt(n)}</figcaption></figure>`).join("");
+  box.querySelectorAll(".fondo").forEach(b => b.onclick = () => b.previousElementSibling.classList.toggle("claro"));
+  box.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm("¿Eliminar " + b.dataset.del + " del brand kit?")) return;
+    await fetch("/api/logos/" + encodeURIComponent(b.dataset.del), { method: "DELETE" });
+    cargarEstado();
+
+async function buscarActualizacion() {
+  try {
+    const v = await (await fetch("/api/version")).json();
+    if (!v.hay_actualizacion) return;
+    const box = $("#update");
+    box.hidden = false;
+    box.innerHTML = `<b>Hay una versión nueva de DER Studio</b>${v.mensaje ? ": " + v.mensaje : ""}.
+      <button class="btn" style="width:auto;margin:0 0 0 12px;padding:8px 16px;font-size:13px" id="btnUpd">Actualizar ahora</button>`;
+    $("#btnUpd").onclick = async () => {
+      box.innerHTML = "Actualizando… la página se recarga sola en unos segundos.";
+      await fetch("/api/actualizar", { method: "POST" }).catch(() => {});
+      await new Promise(r => setTimeout(r, 2500));
+      for (let i = 0; i < 120; i++) {
+        try { if ((await fetch("/api/estado")).ok) return location.reload(); } catch {}
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      box.innerHTML = "No volvió a abrir sola. Abrí DER Studio desde el acceso directo del escritorio.";
+    };
+  } catch {}
+}
+buscarActualizacion();
+setInterval(buscarActualizacion, 30 * 60 * 1000);
+  });
+}
+
+async function subirLogos(fileList) {
+  const fd = new FormData(); fd.append("tipo", "logos");
+  [...fileList].forEach(f => fd.append("archivos", f));
+  const r = await fetch("/api/brand", { method: "POST", body: fd });
+  if (!r.ok) alert((await r.json()).error);
+  cargarEstado();
+}
+{
+  const z = $("#logoDrop"), inp = $("#logoIn");
+  z.onclick = () => inp.click();
+  inp.onchange = () => { subirLogos(inp.files); inp.value = ""; };
+  z.ondragover = e => { e.preventDefault(); z.classList.add("over"); };
+  z.ondragleave = () => z.classList.remove("over");
+  z.ondrop = e => { e.preventDefault(); z.classList.remove("over"); subirLogos(e.dataTransfer.files); };
+}
+
+async function cargarEstado() {
+  const s = await (await fetch("/api/estado")).json();
+  ESTADO = s;
+  pintarSelectoresLogo(s.logos);
+  pintarKitLogos(s.logos);
+  const avisos = [];
+  if (!s.logo_oficial) avisos.push("Falta el <b>logo oficial</b>: se está usando un logotipo de texto provisorio.");
+  if (s.fuentes_faltantes.length) avisos.push("Faltan tipografías: <b>" + s.fuentes_faltantes.join(", ") + "</b> (se usa un reemplazo parecido).");
+  $("#aviso").innerHTML = avisos.length ? avisos.join("<br>") + ' Cargalos en la pestaña <b>Brand kit</b>.' : "";
+  const st = ok => ok ? '<span class="ok">✔</span>' : '<span class="falta">✖</span>';
+  const miss = s.fuentes_faltantes.join(" ");
+  $("#kitFuentes").innerHTML = `
+    <p>${st(!miss.includes("Netron"))} Títulos: <b style="font-family:'DER Titulo'">NETRON</b> <small>(${s.titulo})</small></p>
+    <p>${st(!miss.includes("Articulat"))} Subtítulos: <b style="font-family:'DER Sub'">Articulat CF</b> <small>(${s.subtitulo})</small></p>
+    <p>${st(true)} Cuerpo: <span style="font-family:'DER Cuerpo'">Jost</span> <small>(${s.cuerpo})</small></p>`;
+  $("#kitMusica").innerHTML = s.musica.length ? s.musica.map(m => `<p>♪ ${m}</p>`).join("") : '<p class="hint">Sin temas propios: se usa música genérica generada.</p>';
+  const sel = $("#musicaSel");
+  sel.querySelectorAll("option[data-propia]").forEach(o => o.remove());
+  s.musica.forEach(m => { const o = new Option("Tema · " + m, m); o.dataset.propia = 1; sel.insertBefore(o, sel.lastElementChild); });
+  document.querySelector("header img").src = "/logo.png?t=" + Date.now();
+}
+
+$("#fKit").onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch("/api/brand", { method: "POST", body: new FormData(e.target) });
+  const j = await r.json();
+  alert(r.ok ? "Subido: " + j.guardados.join(", ") : j.error);
+  e.target.reset(); cargarEstado();
+};
+cargarEstado();
+</script>
+</body>
+</html>

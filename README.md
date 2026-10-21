@@ -1,0 +1,106 @@
+# DER Studio
+
+Herramienta personal para generar piezas de Instagram con el brand kit de DER.
+
+- **Posteos e historias**: subís fotos del evento y/o un texto corto → te devuelve posts (4:5 y 1:1) e historias (9:16) listos.
+- **Reels**: subís varios videos (y fotos, si querés) → te devuelve un reel 9:16 con transiciones, música genérica de fondo, título opcional y el logo de cierre.
+
+## Cómo se usa (Windows)
+
+1. Descomprimí `der-studio.zip` en una carpeta fija, por ejemplo `Documentos\der-studio`
+   (clic derecho → *Extraer todo*; no lo abras desde adentro del zip).
+2. Doble clic en **`iniciar.bat`**.
+   - La primera vez instala todo solo (Python si no lo tenés, y lo demás). Tarda unos minutos.
+   - Si Windows muestra "Windows protegió su PC", tocá *Más información* → *Ejecutar de todas formas*.
+   - Te deja un acceso directo **DER Studio** en el escritorio.
+3. Se abre el navegador con la app. Dejá abierta la ventana negra mientras la usás; para salir, cerrala.
+4. Lo que generás se descarga desde la app y además queda guardado en la carpeta `salidas\`.
+
+No necesita internet para usarse (solo la primera vez, para instalar), ni servidor: corre en tu compu.
+Los reels usan el procesador de la PC; un reel de 30 segundos tarda aproximadamente 1 a 3 minutos en una notebook común.
+
+## Actualizaciones
+
+DER Studio se actualiza solo desde GitHub (`ridaofranco/der-studio`):
+- cada vez que lo abrís busca la última versión y la instala antes de arrancar;
+- si lo tenés abierto y sale una versión nueva, aparece un aviso arriba con el botón **Actualizar ahora**.
+
+Las actualizaciones nunca tocan tus logos, tu música, tus tipografías cargadas ni las piezas de `salidas\`.
+
+## Brand kit (carga única)
+
+Los colores ya están configurados según el manual de marca:
+`#ff5c00` naranja · `#333333` gris oscuro · `#f0f0f0` gris claro.
+
+Desde la pestaña **Brand kit** de la app (o copiando los archivos a mano) cargá los archivos que están en el Drive:
+
+| Qué | De dónde (Drive) | A dónde |
+|---|---|---|
+| Logos PNG | carpeta **LOGO SOMOS DER** (dejá los nombres originales, ej. `LOGO-DER-NARANJA-Y-GRIS-CLARO.png`) | `brand/logos/` |
+| Netron (títulos) | `Netron.ttf` | `brand/fonts/` |
+| Articulat CF (subtítulos) | `Articulat CF Font Family.zip` (sirve el .zip tal cual) | `brand/fonts/` |
+| Jost (cuerpo) | ya está incluida | — |
+| Música propia (opcional) | temas libres de derechos .mp3/.wav | `brand/music/` |
+
+Mientras falten, la app usa reemplazos parecidos (Orbitron para títulos, Jost para subtítulos y un logotipo de texto) y lo avisa con un cartel arriba.
+
+El logo se elige solo según el fondo: naranja + gris claro sobre fondos oscuros, naranja + gris oscuro sobre fondos claros.
+
+## Logos
+
+En **Brand kit → Logos** arrastrá todas las versiones juntas (naranja, gris claro, gris oscuro, logos de clientes…).
+Cada una se puede ver sobre fondo claro u oscuro y eliminar.
+
+Al generar (posteos, historias o reels) elegís el logo:
+- **Automático**: la app elige la versión DER que contrasta con el fondo, según el nombre del archivo
+  (`...NARANJA-Y-GRIS-CLARO` para fondos oscuros, `...NARANJA-Y-GRIS-OSCURO` para fondos claros).
+- **Uno puntual**: se usa ese en todas las piezas.
+
+## Editar una pieza
+
+Tocá cualquier imagen generada y se abre el editor:
+- **Mover**: arrastrar. **Agrandar o achicar**: desde las esquinas. Se pega sola al centro.
+- **Textos**: doble clic para escribir. Tipografía (Netron / Articulat / Jost), tamaño, alineación y mayúsculas.
+- **Resaltar palabras**: mientras escribís, seleccioná las palabras y tocá un color.
+- **Colores**: solo los de la marca (naranja, gris oscuro, gris claro, blanco).
+- **Logo**: cambiarlo por otra versión o agregar otro (por ejemplo, el del cliente).
+- **Agregar**: texto, barra naranja, esquinero, grilla de puntos.
+- Duplicar, traer al frente, enviar atrás, eliminar, opacidad.
+- **Deshacer** / **Rehacer** (Ctrl+Z / Ctrl+Y). Flechas del teclado para mover de a 1 px (con Shift, de a 10).
+- **Guardar** reemplaza la imagen y el .zip toma la versión editada. Se puede volver a editar cuantas veces quieras.
+
+La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Encuadre de la foto" al generar.
+
+## Plantillas
+
+| Plantilla | Uso |
+|---|---|
+| Foto a sangre | foto protagonista, texto sobre degradé gris oscuro |
+| Foto enmarcada | fondo gris claro, foto con bloque naranja desplazado |
+| Foto + banda naranja | foto arriba, texto en banda naranja |
+| Collage | 2 a 4 fotos en grilla |
+| Solo texto (gris / naranja) | anuncios, frases, avisos |
+
+- En el título, lo que pongas `*entre asteriscos*` va resaltado en naranja.
+- Con varias fotos se arma un **carrusel**: el texto va solo en la primera, salvo que marques "Texto en todas".
+- Las historias respetan los márgenes que tapa la interfaz de Instagram.
+
+## Reels
+
+- Cada clip se recorta al tramo central (máx. de segundos configurable).
+- Los videos horizontales se centran sobre el mismo video desenfocado.
+- Las fotos entran con un zoom lento.
+- Música: genérica sintetizada en el momento (enérgica, corporativa o suave; sin derechos de autor) o un tema propio de `brand/music/`.
+- Cierre de 3 s con el logo, esquineros naranjas y `SOMOSDER.AR`.
+
+## Estructura
+
+```
+app.py              servidor web local
+der/brand.py        brand kit (colores, tipografías, logos)
+der/graphics.py     plantillas de posts e historias
+der/reels.py        armado de reels con ffmpeg
+der/music.py        música genérica
+templates/          interfaz
+brand/              fuentes, logos y música
+```

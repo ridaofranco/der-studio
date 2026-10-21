@@ -1,0 +1,11 @@
+.venv/
+.subidas/
+salidas/
+__pycache__/
+.version
+brand/fonts/.*.extracted
+brand/logos/*
+!brand/logos/.keep
+brand/music/*
+!brand/music/.keep
+ejemplos/
