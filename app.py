@@ -13,7 +13,10 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+import hmac
+import secrets
+
+from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
 from der import brand, graphics, reels, updater
@@ -24,6 +27,47 @@ UPLOAD_DIR = ROOT / ".subidas"
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024**3  # 4 GB, para videos largos
+
+# --- Acceso con contraseña (solo si se define DER_PASSWORD, p. ej. en el servidor) ---
+PASSWORD = os.environ.get("DER_PASSWORD", "")
+_secret_file = ROOT / ".secreto"
+if not _secret_file.exists():
+    _secret_file.write_text(secrets.token_hex(32))
+app.secret_key = os.environ.get("DER_SECRET") or _secret_file.read_text().strip()
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
+                  PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30)
+
+LOGIN_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>DER Studio</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#333;font:16px system-ui,sans-serif}
+form{background:#f0f0f0;padding:32px;border-radius:12px;width:min(340px,90vw);border-top:6px solid #ff5c00}
+h1{margin:0 0 18px;font-size:22px;color:#333}input,button{width:100%;box-sizing:border-box;padding:12px;border-radius:8px;font:inherit}
+input{border:1px solid #ccc;margin-bottom:12px}button{background:#ff5c00;color:#fff;border:0;cursor:pointer}
+p{color:#b3261e;margin:0 0 12px}</style></head><body><form method="post">
+<h1>DER Studio</h1>{error}<input type="password" name="clave" placeholder="Contraseña" autofocus required>
+<button>Entrar</button></form></body></html>"""
+
+
+@app.before_request
+def _auth():
+    if not PASSWORD or request.path in ("/login",) or session.get("ok"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify(error="Tu sesión venció. Recargá la página e ingresá la contraseña."), 401
+    return redirect("/login")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = ""
+    if request.method == "POST":
+        if hmac.compare_digest(request.form.get("clave", ""), PASSWORD):
+            session.permanent = True
+            session["ok"] = True
+            return redirect("/")
+        time.sleep(1)
+        error = "<p>Contraseña incorrecta.</p>"
+    return LOGIN_HTML.replace("{error}", error)
 
 JOBS: dict[str, dict] = {}
 
@@ -282,4 +326,4 @@ if __name__ == "__main__":
         print("  Dejá esta ventana abierta mientras la usás. Para cerrarla, cerrá la ventana.\n")
         if not os.environ.get("DER_NO_BROWSER"):
             threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-        app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+        app.run(host=os.environ.get("HOST", "127.0.0.1"), port=port, debug=False, threaded=True)

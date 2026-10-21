@@ -9,3 +9,4 @@ brand/logos/*
 brand/music/*
 !brand/music/.keep
 ejemplos/
+.secreto
