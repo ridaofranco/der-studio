@@ -21,7 +21,7 @@ import shutil
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
-from der import brand, graphics, reels, updater
+from der import brand, carrusel, graphics, reels, updater
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "salidas"
@@ -139,6 +139,7 @@ def _zip(files: list[Path], dest: Path) -> Path:
 @app.get("/")
 def index():
     return render_template("index.html", templates=graphics.TEMPLATES, music_styles=list(reels.music.STYLES),
+                           photo_styles=carrusel.PHOTO_STYLES,
                            transitions=reels.TRANSITIONS, template_hints=graphics.TEMPLATE_HINTS)
 
 
@@ -166,7 +167,7 @@ def api_graficos():
         designs = graphics.generate(template, formats, photos, content, out,
                                     carousel_text_first_only=request.form.get("texto_todas") != "1")
         for d in designs:
-            d["base"] = _url(out / f"{d['name']}.base.jpg")
+            d["base"] = _url(out / d["base_file"])
         return jsonify(lote=out.name, disenos=designs)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
@@ -289,6 +290,45 @@ def api_reel_editar():
     return jsonify(job=_start_reel(d, project, len(project["clips"]), previews=False))
 
 
+def _run_carrusel(job_id: str, inputs: list[Path], out: Path, form: dict):
+    job = JOBS[job_id]
+    try:
+        content = graphics.Content(title=form["titulo"], subtitle=form["subtitulo"], body=form["cuerpo"],
+                                   focus=form["enfoque"], logo=form["logo"])
+        slides = carrusel.generate(inputs, out, form["formato"], form["estilo"], content, form["max_video"],
+                                   text_all=form["texto_todas"])
+        for sl in slides:
+            if sl["tipo"] == "foto":
+                sl["diseno"]["base"] = _url(out / sl["diseno"]["base_file"])
+            else:
+                sl["archivo"] = _url(out / sl["nombre"])
+        job.update(estado="listo", lote=out.name, diapositivas=slides)
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        job.update(estado="error", error=str(e))
+    job["fin"] = time.time()
+
+
+@app.post("/api/carrusel")
+def api_carrusel():
+    """Carrusel mixto: fotos (piezas editables) y videos (MP4 4:5 o 1:1) en el orden subido."""
+    inputs = _save_uploads("archivos")
+    if not inputs:
+        return jsonify(error="Subí al menos una foto o un video."), 400
+    f = request.form
+    form = {
+        "titulo": f.get("titulo", "").strip(), "subtitulo": f.get("subtitulo", "").strip(),
+        "cuerpo": f.get("cuerpo", "").strip(), "enfoque": f.get("enfoque", "centro"), "logo": f.get("logo", "auto"),
+        "formato": f.get("formato", "post"), "estilo": f.get("estilo", "impacto"),
+        "max_video": float(f.get("max_video") or 30), "texto_todas": f.get("texto_todas") == "1",
+    }
+    out = _job_dir("carrusel")
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"estado": "procesando", "inicio": time.time(), "n": len(inputs)}
+    threading.Thread(target=_run_carrusel, args=(job_id, inputs, out, form), daemon=True).start()
+    return jsonify(job=job_id)
+
+
 @app.post("/api/brand")
 def api_brand():
     """Subir logos, tipografías o música al brand kit."""
@@ -333,7 +373,8 @@ def api_guardar():
 @app.get("/api/zip/<lote>")
 def api_zip(lote):
     d = _lote(lote)
-    files = sorted(p for p in d.glob("*.jpg") if not p.name.endswith(".base.jpg"))
+    files = sorted([*(p for p in d.glob("*.jpg") if not p.name.endswith(".base.jpg")),
+                    *d.glob("DER-carrusel-*.mp4")], key=lambda p: p.name)
     zipf = _zip(files, d / "DER-piezas.zip")
     return send_from_directory(d, zipf.name, as_attachment=True)
 

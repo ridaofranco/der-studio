@@ -57,7 +57,8 @@ TEMPLATES = {
 }
 PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta"}
 # Plantillas que arman UNA pieza con todas las fotos (las demás hacen una pieza por foto = carrusel)
-SINGLE_DESIGN = {"texto", "naranja", "collage", "cita", "dato", "lista", "comparar", "agenda"}
+SINGLE_DESIGN = {  # (histórico) ahora todas arman carrusel con varias fotos
+    "texto", "naranja", "collage", "cita", "dato", "lista", "comparar", "agenda"}
 # Qué va en cada campo (se muestra en el formulario al elegir la plantilla)
 TEMPLATE_HINTS = {
     "cita": "Título = la frase · Subtítulo = quién la dijo. No usa fotos.",
@@ -255,8 +256,17 @@ class Design:
         self.W, self.H = brand.FORMATS[fmt]
         self.s = self.W / 1080
         self.c = content
-        self.base = Image.new("RGB", (self.W, self.H), bg)
+        # La base es transparente donde va el fondo liso: ese color (bg) lo pinta el editor y se puede cambiar
+        self.bg = bg
+        self.base = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
         self.layers: list[dict] = []
+
+    def over(self, img: Image.Image, xy) -> None:
+        """Pega una imagen con transparencia respetando el alfa (sombras, cintas)."""
+        layer = Image.new("RGBA", self.base.size, (0, 0, 0, 0))
+        img = img.convert("RGBA")
+        layer.paste(img, (int(xy[0]), int(xy[1])), img)
+        self.base = Image.alpha_composite(self.base.convert("RGBA"), layer)
 
     # Capas -----------------------------------------------------------------
     def text(self, role, text, x, y, w, color, size, line_gap, hl_color=None, upper=False, lines=None,
@@ -338,7 +348,18 @@ class Design:
                   align=align, name="Web")
 
     def to_dict(self):
-        return {"fmt": self.fmt, "W": self.W, "H": self.H, "layers": self.layers}
+        return {"fmt": self.fmt, "W": self.W, "H": self.H, "bg": self.bg, "layers": self.layers}
+
+    def save_base(self, path_stem: Path) -> str:
+        """JPG si la base es opaca (foto a sangre); PNG si deja ver el color de fondo."""
+        base = self.base
+        if base.mode == "RGBA" and base.getchannel("A").getextrema()[0] < 255:
+            out = path_stem.with_name(path_stem.name + ".base.png")
+            base.save(out, "PNG", optimize=False, compress_level=3)
+        else:
+            out = path_stem.with_name(path_stem.name + ".base.jpg")
+            base.convert("RGB").save(out, "JPEG", quality=95, subsampling=0)
+        return out.name
 
 
 def logo_url(key: str) -> str:
@@ -523,7 +544,7 @@ def tpl_dato(fmt, photos, c, first=True):
     if photos:
         D.base = cover(photos[0], W, H, c.focus)
         shade = Image.new("RGB", (W, H), DARK_RGB)
-        D.base = Image.blend(D.base, shade, 0.72)
+        D.base = Image.blend(D.base.convert("RGB"), shade, 0.72)
     D.logo("on_dark", 180 * s, m, top)
     D.bracket(W - m - 80 * s, top, 80 * s, 9 * s, ORANGE, "tr")
     box_w = W - 2 * m
@@ -632,8 +653,9 @@ def tpl_agenda(fmt, photos, c, first=True):
     m = 80 * s
     split = int(H * (0.5 if fmt == "historia" else 0.46))
     if photos:
-        D.base.paste(cover(photos[0], W, split, c.focus), (0, 0))
-        bottom_gradient(D.base, 0.25, 120)
+        top_photo = cover(photos[0], W, split, c.focus)
+        bottom_gradient(top_photo, 0.25, 120)
+        D.base.paste(top_photo, (0, 0))
     else:
         D.dots(W - m - 8 * 30 * s, top + 120 * s, 9, 6, 30 * s, 4 * s, "#5a5a5a")
         D.bracket(m, top + 100 * s, 120 * s, 10 * s, ORANGE, "tl")
@@ -685,14 +707,13 @@ def tpl_cinta(fmt, photos, c, first=True):
     cx = (W - rot.width) // 2
     cy = int(area_top + (area_bot - area_top - rot.height) / 2)
     from PIL import ImageFilter
-    D.base.paste(shadow.filter(ImageFilter.GaussianBlur(14 * s)), (cx + int(12 * s), cy + int(18 * s)),
-                 shadow.filter(ImageFilter.GaussianBlur(14 * s)))
-    D.base.paste(rot, (cx, cy), rot)
+    D.over(shadow.filter(ImageFilter.GaussianBlur(14 * s)), (cx + int(12 * s), cy + int(18 * s)))
+    D.over(rot, (cx, cy))
     # cintas (en la base, semitransparentes y giradas)
     tape = Image.new("RGBA", (int(230 * s), int(62 * s)), (255, 92, 0, 215))
     for tx, ty, ta in ((cx + rot.width - 270 * s, cy - 30 * s, -24), (cx + 30 * s, cy + rot.height - 120 * s, 28)):
         t = tape.rotate(ta, expand=True, resample=Image.BICUBIC)
-        D.base.paste(t, (int(tx), int(ty)), t)
+        D.over(t, (tx, ty))
     if has_text:
         D.text_block(m, H - bottom - text_h, box_w, H * 0.26, DARK, ORANGE, DARK, title_size=80)
     else:
@@ -716,25 +737,61 @@ RENDERERS = {
 }
 
 
+# Plantillas que hacen una pieza por foto
+PER_PHOTO = {"impacto", "marco", "banda", "cinta"}
+# Diapositivas siguientes de un carrusel para las plantillas de texto: misma onda, una por foto
+CONTINUATION = {"texto": "impacto", "naranja": "banda", "cita": "marco", "lista": "marco",
+                "dato": "impacto", "agenda": "impacto"}
+
+
+def _chunks(items: list, size: int) -> list[list]:
+    """Reparte en grupos parejos de hasta `size` (9 fotos de a 4 -> 3, 3, 3)."""
+    n = -(-len(items) // size)
+    base, extra = divmod(len(items), n)
+    out, k = [], 0
+    for g in range(n):
+        m = base + (1 if g < extra else 0)
+        out.append(items[k:k + m])
+        k += m
+    return out
+
+
+def slides(template: str, photos: list) -> list[tuple[str, list, bool]]:
+    """Diapositivas del carrusel: (plantilla, fotos, es_la_principal)."""
+    if template in PER_PHOTO:
+        return [(template, [p], True) for p in photos]
+    if template == "collage":
+        return [("collage", g, True) for g in _chunks(photos, 4)]
+    if template == "comparar":
+        out = [("comparar", photos[k:k + 2], True) for k in range(0, len(photos) - 1, 2)]
+        if len(photos) % 2:
+            out.append(("impacto", photos[-1:], False))
+        return out
+    lead = photos[:1] if template in ("dato", "agenda") else []
+    rest = photos[len(lead):]
+    return [(template, lead, True)] + [(CONTINUATION[template], [p], False) for p in rest]
+
+
 def generate(template: str, formats: list[str], photo_paths: list[Path], content: Content,
              out_dir: Path, carousel_text_first_only: bool = True) -> list[dict]:
-    """Genera los diseños (base JPG + capas JSON). Con varias fotos arma un carrusel."""
+    """Genera los diseños (base + capas JSON). Con varias fotos arma un carrusel en cualquier plantilla."""
     out_dir.mkdir(parents=True, exist_ok=True)
     photos = [load_photo(p) for p in photo_paths]
     if template in PHOTO_TEMPLATES and not photos:
         raise ValueError("Esta plantilla necesita al menos una foto.")
     if template == "comparar" and len(photos) < 2:
         raise ValueError("Antes / después necesita 2 fotos: la primera es ANTES y la segunda DESPUÉS.")
-    render = RENDERERS[template]
+    if len(photos) > 20:
+        raise ValueError("Instagram permite hasta 20 diapositivas por carrusel. Subí 20 fotos o menos.")
     designs = []
     for fmt in formats:
-        groups = [photos] if template in SINGLE_DESIGN else [[p] for p in photos]
-        for i, group in enumerate(groups, 1):
+        plan = slides(template, photos)
+        for i, (tpl, group, main) in enumerate(plan, 1):
             first = i == 1 or not carousel_text_first_only
-            d = render(fmt, group, content, first=first)
-            name = f"DER-{template}-{fmt}" + (f"-{i:02d}" if len(groups) > 1 else "")
-            d.base.save(out_dir / f"{name}.base.jpg", "JPEG", quality=95, subsampling=0)
-            data = {"name": name, **d.to_dict()}
+            d = RENDERERS[tpl](fmt, group, content, first=first and (main or not carousel_text_first_only))
+            name = f"DER-{template}-{fmt}" + (f"-{i:02d}" if len(plan) > 1 else "")
+            base_file = d.save_base(out_dir / name)
+            data = {"name": name, "base_file": base_file, **d.to_dict()}
             (out_dir / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             designs.append(data)
     return designs

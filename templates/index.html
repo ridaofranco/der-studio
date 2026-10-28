@@ -101,6 +101,9 @@
   .pieza { margin: 0; }
   .pieza .img { position: relative; border-radius: 8px; overflow: hidden; background: var(--claro); cursor: pointer; min-height: 120px; display: grid; place-items: center; color: var(--texto-suave); font-size: 13px; }
   .pieza img { width: 100%; display: block; }
+  .pieza .img.vid { cursor: default; background: #000; }
+  .pieza .img.vid::after { display: none; }
+  .pieza .img.vid video { width: 100%; display: block; }
   .pieza .img::after { content: "✎ Editar"; position: absolute; inset: auto 8px 8px auto; background: var(--naranja); color: #fff; padding: 6px 12px; border-radius: 6px; font: 13px "DER Sub", sans-serif; opacity: 0; transition: .15s; }
   .pieza .img:hover::after { opacity: 1; }
   .pieza figcaption { display: flex; justify-content: space-between; gap: 6px; align-items: center; font-size: 12px; color: var(--texto-suave); padding: 6px 2px; }
@@ -122,6 +125,12 @@
   .ed-side button:hover { border-color: var(--naranja); }
   .ed-sw { display: flex; gap: 8px; }
   .ed-sw button { width: 36px; height: 36px; border-radius: 50%; padding: 0; border: 2px solid #ccc; }
+  .ed-bg { flex-wrap: wrap; align-items: center; }
+  .ed-bg button.on { border-color: var(--naranja); box-shadow: 0 0 0 2px #ffd3b8; }
+  .ed-otro { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 0 4px; font: 13px "DER Sub", sans-serif; cursor: pointer; }
+  .ed-otro input { width: 36px; height: 36px; padding: 0; border: 2px solid #ccc; border-radius: 50%; overflow: hidden; background: none; cursor: pointer; }
+  .ed-otro input::-webkit-color-swatch-wrapper { padding: 0; }
+  .ed-otro input::-webkit-color-swatch { border: 0; border-radius: 50%; }
   .ed-sel { border-top: 1px solid var(--borde); margin-top: 10px; padding-top: 4px; }
   .ed-danger { color: #b3261e !important; }
   .ed-tip { font-size: 12px; color: var(--texto-suave); margin-top: 14px; }
@@ -216,6 +225,7 @@
   <nav>
     <button class="on" data-tab="graficos">Posteos e historias</button>
     <button data-tab="reels">Reels</button>
+    <button data-tab="carrusel">Carrusel</button>
     <button data-tab="kit">Brand kit</button>
   </nav>
 </header>
@@ -324,6 +334,54 @@
     <div class="resultado" id="rReel"><div class="vacio">El reel aparece acá.</div></div>
   </section>
 
+  <!-- CARRUSEL MIXTO -->
+  <section class="panel" id="carrusel">
+    <form id="fCarrusel">
+      <h2>Carrusel de fotos y videos</h2>
+      <label>Fotos y videos <small>— en el orden en que van (hasta 20)</small></label>
+      <div class="drop" data-input="carIn">Arrastrá fotos y videos acá o hacé clic</div>
+      <input type="file" id="carIn" accept="image/*,video/*" multiple hidden>
+      <div class="thumbs" id="carThumbs"></div>
+      <p class="hint">Las fotos salen como piezas de marca (se pueden editar). Los videos salen recortados al formato, con el logo chico arriba y su audio.</p>
+
+      <label>Título <small>— va en la primera foto; *entre asteriscos* en naranja</small></label>
+      <input type="text" name="titulo" placeholder="Así se vivió el *Sponsor Day*">
+      <label>Subtítulo</label>
+      <input type="text" name="subtitulo" placeholder="Talleres · Córdoba 2026">
+
+      <label>Estilo de las fotos</label>
+      <div class="chips">
+        {% for key, name in photo_styles.items() %}
+        <label><input type="radio" name="estilo" value="{{ key }}" {% if loop.first %}checked{% endif %}> {{ name }}</label>
+        {% endfor %}
+      </div>
+      <div class="row">
+        <div>
+          <label>Formato</label>
+          <select name="formato"><option value="post">Post 4:5</option><option value="cuadrado">Post 1:1</option></select>
+        </div>
+        <div>
+          <label>Máx. segundos por video</label>
+          <input type="number" name="max_video" value="30" min="3" max="60" step="1">
+        </div>
+      </div>
+      <label>Logo</label>
+      <div class="logopick" data-name="logo"></div>
+      <div class="row">
+        <div>
+          <label>Encuadre de las fotos</label>
+          <select name="enfoque"><option value="centro">Centro</option><option value="arriba">Arriba</option><option value="abajo">Abajo</option></select>
+        </div>
+        <div>
+          <label>Texto</label>
+          <label class="check"><input type="checkbox" name="texto_todas" value="1"> En todas las fotos</label>
+        </div>
+      </div>
+      <button class="btn" type="submit">Armar carrusel</button>
+    </form>
+    <div class="resultado" id="rCarrusel"><div class="vacio">Las diapositivas aparecen acá, en orden.</div></div>
+  </section>
+
   <!-- BRAND KIT -->
   <section class="panel" id="kit" style="grid-template-columns: 1fr;">
     <div class="kit">
@@ -380,7 +438,7 @@ if (location.protocol === "file:") {
   throw new Error("abierto como archivo");
 }
 const $ = (s, el = document) => el.querySelector(s);
-const files = { fotosIn: [], reelIn: [] };
+const files = { fotosIn: [], reelIn: [], carIn: [] };
 
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button, .panel").forEach(x => x.classList.remove("on"));
@@ -388,7 +446,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
 });
 
 function renderThumbs(id) {
-  const box = $(id === "fotosIn" ? "#fotosThumbs" : "#reelThumbs");
+  const box = $("#" + id.replace(/In$/, "Thumbs"));
   box.innerHTML = "";
   files[id].forEach((f, i) => {
     const d = document.createElement("div");
@@ -530,6 +588,71 @@ const AYUDA_PLANTILLA = {{ template_hints|tojson }};
 document.querySelectorAll("input[name=plantilla]").forEach(r => r.onchange = () => {
   $("#plantillaAyuda").textContent = AYUDA_PLANTILLA[r.value] || "";
 });
+
+$("#fCarrusel").onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target), box = $("#rCarrusel"), btn = $("button[type=submit]", e.target);
+  if (!files.carIn.length) return showError(box, "Subí al menos una foto o un video.");
+  if (files.carIn.length > 20) return showError(box, "Instagram permite hasta 20 diapositivas por carrusel.");
+  btn.disabled = true;
+  box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="carEstado">Subiendo archivos…</p>';
+  try {
+    (await subirArchivos(files.carIn, t => $("#carEstado").textContent = t)).forEach(ref => fd.append("archivos_subidos", ref));
+    const r = await fetch("/api/carrusel", { method: "POST", body: fd }), j = await r.json();
+    if (!r.ok) { btn.disabled = false; return showError(box, j.error); }
+    const t0 = Date.now();
+    let s;
+    do {
+      await new Promise(ok => setTimeout(ok, 1500));
+      s = await (await fetch("/api/reel/" + j.job)).json();
+      if (s.estado === "procesando") $("#carEstado").textContent = `Armando las diapositivas… ${Math.round((Date.now() - t0) / 1000)} s`;
+    } while (s.estado === "procesando");
+    btn.disabled = false;
+    if (s.estado === "error") return showError(box, s.error);
+    mostrarCarrusel(box, s.lote, s.diapositivas);
+  } catch (err) { btn.disabled = false; showError(box, sinConexion(err)); }
+};
+
+/** Diapositivas del carrusel en orden: fotos editables (se componen acá) y videos. */
+async function mostrarCarrusel(box, lote, slides) {
+  box.innerHTML = `<div class="acciones"><a class="prim off" id="carZip" href="/api/zip/${lote}">Preparando…</a>
+      ${puedeCompartir ? `<a href="#" class="off" id="carShare">Compartir todo</a>` : ""}</div>
+    <p class="hint" style="margin:-6px 0 14px">Tocá una foto para editarla (textos, logo, color de fondo). Los videos van tal cual.</p>
+    <div class="grid">${slides.map((sl, i) => `<figure class="pieza" data-i="${i}">
+      ${sl.tipo === "video"
+        ? `<div class="img vid"><video src="${sl.archivo}" muted playsinline loop preload="metadata" controls></video></div>`
+        : `<div class="img">Componiendo…</div>`}
+      <figcaption><span>${String(i + 1).padStart(2, "0")} · ${sl.tipo === "video" ? "video " + String(sl.segundos).replace(".", ",") + " s" : "foto"}</span>
+      <span class="acc"><a download class="dl" ${sl.tipo === "video" ? `href="${sl.archivo}"` : "hidden"}>Descargar</a></span></figcaption></figure>`).join("")}</div>`;
+  const cards = box.querySelectorAll(".pieza"), finales = [];
+  for (const [i, sl] of slides.entries()) {
+    if (sl.tipo === "video") { finales[i] = [sl.archivo, sl.archivo.split("/").pop(), "video/mp4"]; continue; }
+    const d = sl.diseno, c = cards[i];
+    const pintar = url => {
+      c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+      const a = c.querySelector("a.dl"); a.href = url; a.hidden = false; a.download = d.name + ".jpg";
+      finales[i] = [url.split("?")[0], d.name + ".jpg", "image/jpeg"];
+    };
+    try { pintar(await guardarPieza(lote, d, await DEREditor.render(d))); }
+    catch (err) { c.querySelector(".img").textContent = "Error al componer: " + err; }
+    c.querySelector(".img").onclick = () => DEREditor.open(d, {
+      logos: ESTADO.logos, onSave: async (dd, blob) => pintar(await guardarPieza(lote, dd, blob)),
+    });
+  }
+  const z = $("#carZip"); z.classList.remove("off"); z.textContent = "Descargar todo (.zip)";
+  const sh = $("#carShare");
+  if (sh) {
+    sh.classList.remove("off");
+    sh.onclick = async ev => {
+      ev.preventDefault();
+      try {
+        const fl = await Promise.all(finales.filter(Boolean).map(async ([u, n, t]) => new File([await (await fetch(u)).blob()], n, { type: t })));
+        if (navigator.canShare && navigator.canShare({ files: fl })) await navigator.share({ files: fl });
+        else alert("Este celular no deja compartir varios archivos juntos: usá Descargar todo.");
+      } catch (err) { if (err.name !== "AbortError") alert("No se pudo compartir: " + err.message); }
+    };
+  }
+}
 
 let ESTADO = { logos: [] };
 const logoSrc = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");

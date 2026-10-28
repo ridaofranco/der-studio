@@ -90,7 +90,10 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 | Foto con cinta | foto impresa con borde blanco, girada y pegada con cinta naranja; una pieza por foto |
 
 - En el título, lo que pongas `*entre asteriscos*` va resaltado en naranja.
-- Con varias fotos se arma un **carrusel**: el texto va solo en la primera, salvo que marques "Texto en todas".
+- Con varias fotos se arma un **carrusel en cualquier plantilla** (hasta 20 diapositivas): el texto va solo en la primera, salvo que marques "Texto en todas".
+  - Collage: hasta 4 fotos por diapositiva. Antes / después: una diapositiva por par.
+  - Frase, lista, dato, agenda y solo texto: la primera es la plantilla y después una diapositiva por foto, con el mismo estilo.
+- En el editor, **Fondo** cambia el color liso de la pieza (marca u otro). Lo que quedaría del mismo color que el fondo pasa solo a un color de marca que contraste.
 - Las historias respetan los márgenes que tapa la interfaz de Instagram.
 
 ## Reels
@@ -100,6 +103,13 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 - Las fotos entran con un zoom lento.
 - Música: genérica sintetizada en el momento (enérgica, corporativa o suave; sin derechos de autor) o un tema propio de `brand/music/`.
 - Cierre de 3 s con el logo, esquineros naranjas y `SOMOSDER.AR`.
+
+## Carrusel de fotos y videos
+
+Pestaña **Carrusel**: subís fotos y videos en el orden en que van (hasta 20).
+- Las fotos salen como piezas de marca con el estilo elegido (foto a sangre, enmarcada, banda o cinta) y se pueden editar.
+- Los videos salen en 4:5 o 1:1, con el logo chico arriba y su audio original; los horizontales van sobre el mismo video desenfocado. Máximo de segundos configurable (Instagram admite hasta 60).
+- **Descargar todo** baja un .zip numerado (`DER-carrusel-01`, `-02`…); **Compartir todo** lo manda directo desde el celular si el sistema lo permite.
 
 ### Editar un reel ya generado
 

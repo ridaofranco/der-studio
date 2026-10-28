@@ -51,6 +51,8 @@
     } else {
       for (const l of design.layers) canvas.add(await layerToObject(l));
     }
+    // color de fondo: se ve donde la base es transparente (todo menos las fotos)
+    canvas.backgroundColor = (design.fabric && design.fabric.background) || design.bg || BRAND.claro;
     canvas.renderAll();
   }
 
@@ -88,6 +90,11 @@
           <button data-add="puntos">Puntos</button>
         </div>
         <select class="ed-addlogo"><option value="">+ Agregar logo…</option></select>
+        <h3>Fondo</h3>
+        <div class="ed-sw ed-bg">
+          ${Object.entries(BRAND).map(([k, v]) => `<button data-bg="${v}" title="Fondo ${k}" style="background:${v}"></button>`).join("")}
+          <label class="ed-otro" title="Otro color"><input type="color" data-bgpick><span>Otro</span></label>
+        </div>
 
         <div class="ed-sel" hidden>
           <h3>Seleccionado: <span class="ed-selname"></span></h3>
@@ -296,6 +303,45 @@
       },
     };
     root.querySelectorAll("[data-a]").forEach(b => b.onclick = () => actions[b.dataset.a]());
+
+    // Fondo: cambia el color liso de la pieza (las fotos no se tocan)
+    // Si un elemento queda del mismo color que el fondo nuevo, pasa al color de marca que contrasta
+    const contrast = bg => {
+      const c = bg.toLowerCase();
+      if (c === BRAND.naranja) return BRAND.oscuro;
+      return luminance(c) < 0.45 ? BRAND.claro : BRAND.oscuro;
+    };
+    function luminance(hex) {
+      const m = /^#?([0-9a-f]{6})$/i.exec(hex); if (!m) return 1;
+      const n = parseInt(m[1], 16);
+      return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+    }
+    const same = (a, b) => typeof a === "string" && a.toLowerCase() === b.toLowerCase();
+    async function fixClashes(bg) {
+      const alt = contrast(bg);
+      for (const o of canvas.getObjects()) {
+        if (same(o.fill, bg)) o.set("fill", alt);
+        if (o.styles) for (const li in o.styles) for (const ci in o.styles[li]) {
+          // las palabras resaltadas tienen que seguir distinguiéndose del resto del texto
+          if (same(o.styles[li][ci].fill, bg)) o.styles[li][ci].fill = same(bg, BRAND.naranja) ? BRAND.blanco : alt;
+        }
+        const src = o.getSrc && o.getSrc();
+        if (src && src.includes("/elemento/") && src.includes("color=" + bg.slice(1).toLowerCase())) {
+          await new Promise(ok => o.setSrc(src.replace("color=" + bg.slice(1).toLowerCase(), "color=" + alt.slice(1)), ok));
+        }
+        o.dirty = true;
+      }
+    }
+    const setBg = async (color, fix = true) => {
+      canvas.backgroundColor = color;
+      if (fix) await fixClashes(color);
+      canvas.requestRenderAll(); snapshot();
+      root.querySelectorAll("[data-bg]").forEach(b => b.classList.toggle("on", b.dataset.bg.toLowerCase() === color.toLowerCase()));
+      $("[data-bgpick]").value = /^#[0-9a-f]{6}$/i.test(color) ? color : "#333333";
+    };
+    root.querySelectorAll("[data-bg]").forEach(b => b.onclick = () => setBg(b.dataset.bg));
+    $("[data-bgpick]").oninput = e => setBg(e.target.value);
+    setBg(canvas.backgroundColor || BRAND.claro, false);
 
     function onKey(e) {
       const o = active();
