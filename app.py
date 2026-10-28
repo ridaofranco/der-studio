@@ -21,7 +21,7 @@ import shutil
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
-from der import brand, carrusel, graphics, reels, updater
+from der import aviso, brand, carrusel, compose, graphics, reels, updater
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "salidas"
@@ -53,7 +53,7 @@ p{color:#b3261e;margin:0 0 12px}</style></head><body><form method="post">
 @app.before_request
 def _auth():
     if not PASSWORD or session.get("ok") or request.path in (
-            "/login", "/manifest.webmanifest") or request.path.startswith("/icono-"):
+            "/login", "/manifest.webmanifest", "/sw.js") or request.path.startswith("/icono-"):
         return None
     if request.path.startswith("/api/"):
         return jsonify(error="Tu sesión venció. Recargá la página e ingresá la contraseña."), 401
@@ -73,6 +73,50 @@ def login():
     return LOGIN_HTML.replace("{error}", error)
 
 JOBS: dict[str, dict] = {}
+JOBS_DIR = OUT_DIR / ".trabajos"
+TIPO_NOMBRE = {"reel": "Tu reel", "carrusel": "Tu carrusel", "piezas": "Tus piezas"}
+
+
+def _job_new(tipo: str, lote: Path, extra: dict | None = None) -> str:
+    """Trabajo en segundo plano. Su estado se guarda en disco: si el celular sale de la app
+    (o el servidor se reinicia), al volver se puede consultar igual."""
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"id": job_id, "tipo": tipo, "lote": lote.name, "estado": "procesando",
+                    "inicio": time.time(), **(extra or {})}
+    _job_save(job_id)
+    return job_id
+
+
+def _job_save(job_id: str) -> None:
+    JOBS_DIR.mkdir(parents=True, exist_ok=True)
+    (JOBS_DIR / f"{job_id}.json").write_text(json.dumps(JOBS[job_id], ensure_ascii=False), encoding="utf-8")
+
+
+def _job_set(job_id: str, **kw) -> None:
+    JOBS[job_id].update(kw)
+    if kw.get("estado") in ("listo", "error"):
+        JOBS[job_id]["fin"] = time.time()
+    _job_save(job_id)
+    if kw.get("estado") in ("listo", "error"):
+        job = JOBS[job_id]
+        nombre = TIPO_NOMBRE.get(job["tipo"], "Tu trabajo")
+        ok = kw["estado"] == "listo"
+        aviso.enviar(ROOT, f"{nombre} {'está listo' if ok else 'no se pudo generar'}",
+                     "Tocá para verlo en DER Studio." if ok else str(job.get("error", ""))[:120],
+                     f"/?trabajo={job_id}")
+
+
+def _job_get(job_id: str) -> dict | None:
+    if job_id in JOBS:
+        return JOBS[job_id]
+    f = JOBS_DIR / f"{secure_filename(job_id)}.json"
+    if not f.exists():
+        return None
+    job = json.loads(f.read_text(encoding="utf-8"))
+    if job.get("estado") == "procesando":
+        # el hilo que lo procesaba ya no existe (el servidor se reinició a mitad de camino)
+        job.update(estado="error", error="Se interrumpió porque DER Studio se reinició. Volvé a generarlo.")
+    return job
 
 
 def _job_dir(kind: str) -> Path:
@@ -108,21 +152,48 @@ def _limpiar_subidas(max_horas: float = 24) -> None:
             shutil.rmtree(d, ignore_errors=True)
 
 
+def _partes(d: Path, name: str) -> list[int]:
+    return sorted(int(p.suffix[6:]) for p in d.glob(f"{name}.parte*") if p.suffix[6:].isdigit())
+
+
 @app.post("/api/subir")
 def api_subir():
-    """Subida por partes: Cloudflare (plan gratis) corta los envíos de más de 100 MB."""
+    """Subida por partes: Cloudflare (plan gratis) corta los envíos de más de 100 MB.
+    Cada parte se guarda aparte, así reintentarla no duplica nada y la subida se puede retomar
+    si el celular salió de la app a mitad de camino. Con todas las partes, se arma el archivo."""
     up_id = secure_filename(request.form.get("id", ""))
     name = secure_filename(request.form.get("nombre", "")) or "archivo"
     parte, total = int(request.form.get("parte", 0)), int(request.form.get("total", 1))
-    if not up_id or "trozo" not in request.files:
+    if not up_id or "trozo" not in request.files or not 0 <= parte < total <= 10_000:
         abort(400)
     d = UPLOAD_DIR / "partes" / up_id
     d.mkdir(parents=True, exist_ok=True)
     if parte == 0:
         _limpiar_subidas()
-    with open(d / name, "wb" if parte == 0 else "ab") as fh:
-        request.files["trozo"].save(fh)
-    return jsonify(ok=True, ref=f"{up_id}/{name}" if parte == total - 1 else None)
+    tmp = d / f"{name}.tmp{parte}"
+    request.files["trozo"].save(tmp)
+    tmp.replace(d / f"{name}.parte{parte:05d}")
+    if len(_partes(d, name)) < total:
+        return jsonify(ok=True, ref=None)
+    with open(d / name, "wb") as out:
+        for k in range(total):
+            pf = d / f"{name}.parte{k:05d}"
+            with open(pf, "rb") as fh:
+                shutil.copyfileobj(fh, out, 8 * 1024 * 1024)
+    for k in range(total):
+        (d / f"{name}.parte{k:05d}").unlink(missing_ok=True)
+    return jsonify(ok=True, ref=f"{up_id}/{name}")
+
+
+@app.get("/api/subir/estado")
+def api_subir_estado():
+    """Qué partes ya llegaron (para retomar una subida sin volver a mandarlas)."""
+    up_id = secure_filename(request.args.get("id", ""))
+    name = secure_filename(request.args.get("nombre", "")) or "archivo"
+    d = UPLOAD_DIR / "partes" / up_id
+    if up_id and (d / name).is_file():
+        return jsonify(completo=True, ref=f"{up_id}/{name}", partes=[])
+    return jsonify(completo=False, partes=_partes(d, name) if up_id and d.is_dir() else [])
 
 
 def _url(p: Path) -> str:
@@ -163,15 +234,35 @@ def api_graficos():
         )
         if template not in graphics.PHOTO_TEMPLATES and not (content.title or content.subtitle or content.body):
             return jsonify(error="Escribí al menos un título o un texto."), 400
+        if template in graphics.PHOTO_TEMPLATES and not photos:
+            return jsonify(error="Esta plantilla necesita al menos una foto."), 400
         out = _job_dir(template)
-        designs = graphics.generate(template, formats, photos, content, out,
-                                    carousel_text_first_only=request.form.get("texto_todas") != "1")
-        for d in designs:
-            d["base"] = _url(out / d["base_file"])
-        return jsonify(lote=out.name, disenos=designs)
+        job_id = _job_new("piezas", out)
+        threading.Thread(target=_run_graficos, daemon=True, args=(
+            job_id, template, formats, photos, content, out, request.form.get("texto_todas") != "1")).start()
+        return jsonify(job=job_id)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify(error=str(e)), 400
+
+
+def _design_out(out: Path, d: dict) -> dict:
+    """Agrega las direcciones de la base y de la pieza terminada (con marca de tiempo contra el caché)."""
+    fin = out / f"{d['name']}.jpg"
+    stamp = int(fin.stat().st_mtime) if fin.exists() else 0
+    return {**d, "base": _url(out / d["base_file"]), "final": _url(fin) + f"?t={stamp}"}
+
+
+def _run_graficos(job_id, template, formats, photos, content, out, first_only):
+    try:
+        designs = graphics.generate(template, formats, photos, content, out, carousel_text_first_only=first_only)
+        for k, d in enumerate(designs, 1):
+            compose.save_final(d, out)
+            _job_set(job_id, progreso=f"{k} de {len(designs)}")
+        _job_set(job_id, estado="listo", disenos=[_design_out(out, d) for d in designs])
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        _job_set(job_id, estado="error", error=str(e))
 
 
 def _reel_info(lote: Path, project: dict) -> dict:
@@ -198,25 +289,22 @@ def _prepare_previews(lote: Path, project: dict) -> None:
 
 
 def _run_reel(job_id: str, lote: Path, project: dict, out: Path, previews: bool = False):
-    job = JOBS[job_id]
     try:
         reels.render_project(project, lote, out)
         (lote / "proyecto.json").write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
         if previews:
             _prepare_previews(lote, project)
-        job.update(estado="listo", archivo=_url(out), proyecto=_reel_info(lote, project),
-                   transiciones=reels.TRANSITIONS)
+        _job_set(job_id, estado="listo", archivo=_url(out), proyecto=_reel_info(lote, project),
+                 transiciones=reels.TRANSITIONS)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
-        job.update(estado="error", error=str(e))
-    job["fin"] = time.time()
+        _job_set(job_id, estado="error", error=str(e))
 
 
 def _start_reel(lote: Path, project: dict, n: int, previews: bool) -> str:
     version = project.get("version", 0)
     out = lote / f"DER-reel{'-v' + str(version) if version else ''}-{datetime.now():%H%M%S}.mp4"
-    job_id = uuid.uuid4().hex[:12]
-    JOBS[job_id] = {"estado": "procesando", "inicio": time.time(), "n": n}
+    job_id = _job_new("reel", lote, {"n": n})
     threading.Thread(target=_run_reel, args=(job_id, lote, project, out, previews), daemon=True).start()
     return job_id
 
@@ -255,9 +343,10 @@ def api_reel():
     return jsonify(job=_start_reel(lote, project, len(srcs), previews=True))
 
 
+@app.get("/api/trabajo/<job_id>")
 @app.get("/api/reel/<job_id>")
-def api_reel_estado(job_id):
-    job = JOBS.get(job_id) or abort(404)
+def api_trabajo(job_id):
+    job = _job_get(job_id) or abort(404)
     return jsonify(job)
 
 
@@ -285,13 +374,12 @@ def api_reel_editar():
         return jsonify(error=str(e)), 400
     prev = json.loads((d / "proyecto.json").read_text(encoding="utf-8")) if (d / "proyecto.json").exists() else {}
     project["version"] = int(prev.get("version", 0)) + 1
-    if any(j.get("estado") == "procesando" for j in JOBS.values()):
+    if any(j.get("estado") == "procesando" and j.get("tipo") == "reel" for j in JOBS.values()):
         return jsonify(error="Ya hay un reel procesándose. Esperá a que termine y probá de nuevo."), 409
     return jsonify(job=_start_reel(d, project, len(project["clips"]), previews=False))
 
 
 def _run_carrusel(job_id: str, inputs: list[Path], out: Path, form: dict):
-    job = JOBS[job_id]
     try:
         content = graphics.Content(title=form["titulo"], subtitle=form["subtitulo"], body=form["cuerpo"],
                                    focus=form["enfoque"], logo=form["logo"])
@@ -299,14 +387,14 @@ def _run_carrusel(job_id: str, inputs: list[Path], out: Path, form: dict):
                                    text_all=form["texto_todas"])
         for sl in slides:
             if sl["tipo"] == "foto":
-                sl["diseno"]["base"] = _url(out / sl["diseno"]["base_file"])
+                compose.save_final(sl["diseno"], out)
+                sl["diseno"] = _design_out(out, sl["diseno"])
             else:
                 sl["archivo"] = _url(out / sl["nombre"])
-        job.update(estado="listo", lote=out.name, diapositivas=slides)
+        _job_set(job_id, estado="listo", diapositivas=slides)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
-        job.update(estado="error", error=str(e))
-    job["fin"] = time.time()
+        _job_set(job_id, estado="error", error=str(e))
 
 
 @app.post("/api/carrusel")
@@ -323,10 +411,116 @@ def api_carrusel():
         "max_video": float(f.get("max_video") or 30), "texto_todas": f.get("texto_todas") == "1",
     }
     out = _job_dir("carrusel")
-    job_id = uuid.uuid4().hex[:12]
-    JOBS[job_id] = {"estado": "procesando", "inicio": time.time(), "n": len(inputs)}
+    job_id = _job_new("carrusel", out, {"n": len(inputs)})
     threading.Thread(target=_run_carrusel, args=(job_id, inputs, out, form), daemon=True).start()
     return jsonify(job=job_id)
+
+
+def _lote_tipo(d: Path) -> str:
+    if (d / "proyecto.json").exists() or d.name.endswith("_reel"):
+        return "reel"
+    if d.name.endswith("_carrusel"):
+        return "carrusel"
+    return "piezas"
+
+
+@app.get("/api/recientes")
+def api_recientes():
+    """Lo generado en los últimos 14 días (y lo que se está procesando)."""
+    limite = time.time() - 14 * 86400
+    items = []
+    activos = {}
+    for f in JOBS_DIR.glob("*.json") if JOBS_DIR.is_dir() else []:
+        if f.stat().st_mtime < limite:
+            continue
+        j = _job_get(f.stem)
+        if j and j.get("estado") == "procesando":
+            activos[j["lote"]] = j["id"]
+    for d in sorted((p for p in OUT_DIR.iterdir() if p.is_dir() and not p.name.startswith(".")),
+                    key=lambda p: p.name, reverse=True):
+        if d.stat().st_mtime < limite or d.name == "prueba-compose" or len(items) >= 40:
+            continue
+        tipo = _lote_tipo(d)
+        thumb, n = None, 0
+        if tipo == "reel":
+            mp4 = sorted(d.glob("DER-reel*.mp4"), key=lambda p: p.stat().st_mtime)
+            minis = sorted((d / "miniaturas").glob("*.jpg")) if (d / "miniaturas").is_dir() else []
+            thumb = _url(minis[0]) if minis else None
+            n = len(mp4)
+            if not mp4 and d.name not in activos:
+                continue
+        else:
+            finals = sorted(p for p in d.glob("DER-*.jpg") if ".base." not in p.name)
+            vids = sorted(d.glob("DER-carrusel-*.mp4"))
+            thumb = _url(finals[0]) if finals else None
+            n = len(finals) + len(vids)
+            if not n and d.name not in activos:
+                continue
+        fecha = datetime.strptime(d.name[:17], "%Y-%m-%d_%H%M%S") if d.name[:4].isdigit() else None
+        items.append({"lote": d.name, "tipo": tipo, "plantilla": d.name[18:], "n": n, "miniatura": thumb,
+                      "fecha": fecha.strftime("%d/%m %H:%M") if fecha else "",
+                      "trabajo": activos.get(d.name)})
+    return jsonify(items=items)
+
+
+@app.get("/api/lote/<lote>")
+def api_lote(lote):
+    """Vuelve a abrir algo ya generado (desde Recientes o desde una notificación)."""
+    d = _lote(lote)
+    tipo = _lote_tipo(d)
+    if tipo == "reel":
+        mp4 = sorted(d.glob("DER-reel*.mp4"), key=lambda p: p.stat().st_mtime)
+        if not mp4:
+            abort(404)
+        info = {"tipo": "reel", "archivo": _url(mp4[-1])}
+        if (d / "proyecto.json").exists():
+            project = json.loads((d / "proyecto.json").read_text(encoding="utf-8"))
+            _prepare_previews(d, project)
+            info.update(proyecto=_reel_info(d, project), transiciones=reels.TRANSITIONS)
+        return jsonify(info)
+    designs = []
+    for j in sorted(d.glob("DER-*.json")):
+        data = json.loads(j.read_text(encoding="utf-8"))
+        if "base_file" not in data:  # piezas de versiones anteriores
+            data["base_file"] = f"{data['name']}.base.jpg"
+        designs.append(_design_out(d, data))
+    if tipo == "carrusel":
+        by_name = {x["name"]: {"tipo": "foto", "diseno": x} for x in designs}
+        for v in d.glob("DER-carrusel-*.mp4"):
+            by_name[v.stem] = {"tipo": "video", "archivo": _url(v), "nombre": v.name,
+                               "segundos": round(reels.probe(v)["duration"], 1)}
+        return jsonify(tipo="carrusel", lote=d.name, diapositivas=[by_name[k] for k in sorted(by_name)])
+    return jsonify(tipo="piezas", lote=d.name, disenos=designs)
+
+
+# --- Avisos al celular (Web Push) --------------------------------------------------
+
+@app.get("/sw.js")
+def service_worker():
+    resp = send_from_directory(ROOT / "static", "sw.js", mimetype="application/javascript", max_age=0)
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+@app.get("/api/avisos/clave")
+def api_avisos_clave():
+    clave = aviso.clave_publica(ROOT)
+    return jsonify(clave=clave, disponible=bool(clave))
+
+
+@app.post("/api/avisos/suscribir")
+def api_avisos_suscribir():
+    sub = request.get_json(silent=True) or {}
+    if not sub.get("endpoint"):
+        return jsonify(error="Suscripción inválida."), 400
+    aviso.guardar(ROOT, sub)
+    return jsonify(ok=True)
+
+
+@app.post("/api/avisos/probar")
+def api_avisos_probar():
+    n = aviso.enviar(ROOT, "Avisos activados", "Te voy a avisar acá cuando termine cada reel o pieza.", "/")
+    return jsonify(enviados=n)
 
 
 @app.post("/api/brand")

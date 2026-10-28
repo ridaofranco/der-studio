@@ -104,6 +104,15 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 - Música: genérica sintetizada en el momento (enérgica, corporativa o suave; sin derechos de autor) o un tema propio de `brand/music/`.
 - Cierre de 3 s con el logo, esquineros naranjas y `SOMOSDER.AR`.
 
+## Trabajar en segundo plano
+
+- Mientras **sube** los archivos, la app tiene que quedar abierta (la pantalla no se apaga sola). Si se corta o salís,
+  al volver retoma desde la parte que faltaba.
+- Una vez subidos, **podés salir de la app**: el servidor arma todo (también las piezas terminadas).
+  Al volver, el resultado aparece solo; además queda en la pestaña **Recientes** (últimos 14 días).
+- **Avisarme** (arriba): activa una notificación cuando termina cada reel, carrusel o lote de piezas.
+  En iPhone funciona con DER Studio agregado a la pantalla de inicio (iOS 16.4 o más nuevo).
+
 ## Carrusel de fotos y videos
 
 Pestaña **Carrusel**: subís fotos y videos en el orden en que van (hasta 20).

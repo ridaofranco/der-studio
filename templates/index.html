@@ -216,16 +216,41 @@
   .re-status { font-size: 13px; color: #cfcfcf; margin: 10px 2px 0; min-height: 1em; }
   .re-status.err { color: #ffb4a6; white-space: pre-wrap; }
   @media (max-width: 600px) { .re { margin-left: -6px; margin-right: -6px; padding: 16px 12px 14px; } .re-total b { font-size: 22px; } }
+  /* segundo plano, recientes y avisos */
+  .segundo-plano { margin: 14px 0 0; padding: 12px 14px; background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; font-size: 14px; }
+  .avisos { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--claro); border: 1px solid #555; border-radius: 999px; padding: 7px 14px 7px 10px; font: 13px "DER Sub", sans-serif; cursor: pointer; }
+  .avisos i { width: 10px; height: 10px; border-radius: 50%; background: #777; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+  .avisos.on { border-color: var(--naranja); }
+  .avisos.on i { background: var(--naranja); box-shadow: 0 0 0 3px rgba(255,92,0,.25); }
+  header nav { margin-left: 0; }
+  .recientes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .rec { display: grid; grid-template-columns: 64px 1fr; gap: 12px; align-items: center; text-align: left; background: var(--claro); border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; font: inherit; color: inherit; }
+  .rec:hover { border-color: var(--naranja); }
+  .rec-img { width: 64px; height: 80px; border-radius: 6px; overflow: hidden; background: var(--oscuro); display: grid; place-items: center; }
+  .rec-img img { width: 100%; height: 100%; object-fit: cover; }
+  .rec-ph { color: var(--naranja); font-size: 22px; }
+  .rec-txt b { display: block; font: 15px "DER Sub", sans-serif; text-transform: capitalize; }
+  .rec-txt small { color: var(--texto-suave); font-size: 13px; }
+  .rec-txt em { color: var(--naranja); font-style: normal; }
+  @media (max-width: 600px) {
+    header h1 { margin-right: auto; }
+    .avisos { padding: 6px 12px 6px 9px; }
+    header nav { width: 100%; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; gap: 0; scrollbar-width: none; margin: 0 -14px; padding: 0 8px; width: calc(100% + 28px); }
+    header nav::-webkit-scrollbar { display: none; }
+    header nav button { white-space: nowrap; flex: 0 0 auto; padding: 8px 10px; }
+  }
 </style>
 </head>
 <body>
 <header>
   <img src="/logo.png" alt="DER">
   <h1><span>Studio</span></h1>
+  <button type="button" id="btnAvisos" class="avisos"><i aria-hidden="true"></i><span>Avisarme</span></button>
   <nav>
     <button class="on" data-tab="graficos">Posteos e historias</button>
     <button data-tab="reels">Reels</button>
     <button data-tab="carrusel">Carrusel</button>
+    <button data-tab="recientes">Recientes</button>
     <button data-tab="kit">Brand kit</button>
   </nav>
 </header>
@@ -382,6 +407,15 @@
     <div class="resultado" id="rCarrusel"><div class="vacio">Las diapositivas aparecen acá, en orden.</div></div>
   </section>
 
+  <!-- RECIENTES -->
+  <section class="panel" id="recientes" style="grid-template-columns: 1fr;">
+    <div class="resultado">
+      <h2>Recientes</h2>
+      <p class="hint" style="margin:-6px 0 16px">Todo lo que generaste en los últimos 14 días. Lo que dice <em>procesando</em> sigue armándose en el servidor aunque cierres la app.</p>
+      <div class="recientes" id="recLista"></div>
+    </div>
+  </section>
+
   <!-- BRAND KIT -->
   <section class="panel" id="kit" style="grid-template-columns: 1fr;">
     <div class="kit">
@@ -440,10 +474,6 @@ if (location.protocol === "file:") {
 const $ = (s, el = document) => el.querySelector(s);
 const files = { fotosIn: [], reelIn: [], carIn: [] };
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button, .panel").forEach(x => x.classList.remove("on"));
-  b.classList.add("on"); $("#" + b.dataset.tab).classList.add("on");
-});
 
 function renderThumbs(id) {
   const box = $("#" + id.replace(/In$/, "Thumbs"));
@@ -477,38 +507,71 @@ function showError(box, msg) { box.innerHTML = `<div class="error">${msg}</div>`
 $("#fGraficos").onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData(e.target), box = $("#rGraficos"), btn = $("button[type=submit]", e.target);
-  btn.disabled = true; box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="gEstado">Subiendo fotos…</p>';
+  btn.disabled = true; box.innerHTML = progresoHTML("gEstado", "Subiendo fotos…");
   try {
     (await subirArchivos(files.fotosIn, t => $("#gEstado").textContent = t)).forEach(ref => fd.append("fotos_subidos", ref));
-    $("#gEstado").textContent = "Generando…";
     const r = await fetch("/api/graficos", { method: "POST", body: fd }), j = await r.json();
     if (!r.ok) return showError(box, j.error);
-    mostrarPiezas(box, j.lote, j.disenos);
+    seguirTrabajo(j.job, "piezas");
   } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
 };
 
-/** Sube los archivos de a uno y en partes de 40 MB (Cloudflare corta los envíos de más de 100 MB). */
+/** Sube los archivos de a uno y en partes de 40 MB (Cloudflare corta los envíos de más de 100 MB).
+ *  Si el celular sale de la app a mitad de camino, al volver retoma desde la parte que faltaba. */
 async function subirArchivos(lista, avisar) {
   const PARTE = 40 * 1024 * 1024, refs = [];
   const total = lista.reduce((a, f) => a + f.size, 0) || 1;
   let enviados = 0;
-  for (const [i, f] of lista.entries()) {
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const partes = Math.max(1, Math.ceil(f.size / PARTE));
-    for (let p = 0; p < partes; p++) {
-      const fd = new FormData();
-      fd.append("id", id); fd.append("nombre", f.name || `archivo-${i}`);
-      fd.append("parte", p); fd.append("total", partes);
-      fd.append("trozo", f.slice(p * PARTE, (p + 1) * PARTE), f.name);
-      const r = await fetch("/api/subir", { method: "POST", body: fd });
-      if (!r.ok) throw new Error(r.status === 401 ? "Tu sesión venció: recargá la página." : "No se pudo subir " + f.name);
-      const j = await r.json();
-      enviados += Math.min(PARTE, f.size - p * PARTE);
-      avisar(`Subiendo ${i + 1} de ${lista.length}… ${Math.round(enviados / total * 100)}%`);
-      if (j.ref) refs.push(j.ref);
+  const lock = await mantenerPantalla();
+  try {
+    for (const [i, f] of lista.entries()) {
+      f._id = f._id || Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      const nombre = f.name || `archivo-${i}`;
+      const partes = Math.max(1, Math.ceil(f.size / PARTE));
+      const est = await reintentar(() => fetch(`/api/subir/estado?id=${f._id}&nombre=${encodeURIComponent(nombre)}`).then(r => r.json()));
+      if (est.completo) { refs.push(est.ref); enviados += f.size; continue; }
+      const ya = new Set(est.partes);
+      for (let p = 0; p < partes; p++) {
+        const tam = Math.min(PARTE, f.size - p * PARTE);
+        if (ya.has(p)) { enviados += tam; continue; }
+        const j = await reintentar(async () => {
+          const fd = new FormData();
+          fd.append("id", f._id); fd.append("nombre", nombre);
+          fd.append("parte", p); fd.append("total", partes);
+          fd.append("trozo", f.slice(p * PARTE, (p + 1) * PARTE), nombre);
+          const r = await fetch("/api/subir", { method: "POST", body: fd });
+          if (r.status === 401) throw Object.assign(new Error("Tu sesión venció: recargá la página."), { fatal: true });
+          if (!r.ok) throw new Error("No se pudo subir " + nombre);
+          return r.json();
+        }, t => avisar(`Se cortó la subida, reintentando… (${t})`));
+        enviados += tam;
+        avisar(`Subiendo ${i + 1} de ${lista.length}… ${Math.round(enviados / total * 100)}% · no cierres la app hasta que termine de subir`);
+        if (j.ref) refs.push(j.ref);
+      }
+    }
+  } finally { lock && lock.release().catch(() => {}); }
+  return refs;
+}
+
+/** Reintenta lo que falla por corte de red o porque el celular pausó la app (hasta ~10 min). */
+async function reintentar(fn, avisar) {
+  for (let k = 1; ; k++) {
+    try { return await fn(); }
+    catch (err) {
+      if (err.fatal || k >= 40) throw err;
+      avisar && avisar(k);
+      await new Promise(ok => setTimeout(ok, Math.min(15000, 1000 * k)));
     }
   }
-  return refs;
+}
+
+/** Mientras sube, que la pantalla no se apague sola (si el celular lo permite). */
+async function mantenerPantalla() {
+  try { return navigator.wakeLock ? await navigator.wakeLock.request("screen") : null; } catch (_) { return null; }
+}
+
+function progresoHTML(id, texto) {
+  return `<div class="progreso"><div></div></div><p class="hint" id="${id}">${texto}</p>`;
 }
 
 async function compartir(url, nombre, tipo) {
@@ -531,28 +594,24 @@ async function guardarPieza(lote, d, blob) {
 }
 
 async function mostrarPiezas(box, lote, disenos) {
-  box.innerHTML = `<div class="acciones"><a class="prim off" id="zipLink" href="/api/zip/${lote}">Preparando…</a></div>
-    <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla: mover, cambiar textos, colores o el logo.</p>
+  box.innerHTML = `<div class="acciones"><a class="prim" href="/api/zip/${lote}">Descargar todo (.zip)</a></div>
+    <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla: mover, cambiar textos, colores, el fondo o el logo.</p>
     <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
-      <div class="img">Componiendo…</div>
-      <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a> <a download="${d.name}.jpg" hidden class="dl">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
-  const cards = box.querySelectorAll(".pieza");
-  const pintar = (i, url) => {
-    const c = cards[i];
-    c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
-    const a = c.querySelector("a.dl"); a.href = url; a.hidden = false;
+      <div class="img"><img src="${d.final}" alt="" loading="lazy"></div>
+      <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a> <a download="${d.name}.jpg" class="dl" href="${d.final}">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
+  box.querySelectorAll(".pieza").forEach((c, i) => {
+    const d = disenos[i];
+    const pintar = url => {
+      c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+      c.querySelector("a.dl").href = url;
+    };
     const sh = c.querySelector("a.share");
-    if (puedeCompartir) { sh.hidden = false; sh.onclick = ev => { ev.preventDefault(); compartir(url.split("?")[0], disenos[i].name + ".jpg", "image/jpeg"); }; }
-  };
-  for (const [i, d] of disenos.entries()) {
-    try { pintar(i, await guardarPieza(lote, d, await DEREditor.render(d))); }
-    catch (err) { cards[i].querySelector(".img").textContent = "Error al componer: " + err; }
-    cards[i].querySelector(".img").onclick = () => DEREditor.open(d, {
+    if (puedeCompartir) { sh.hidden = false; sh.onclick = ev => { ev.preventDefault(); compartir(c.querySelector("a.dl").href.split("?")[0], d.name + ".jpg", "image/jpeg"); }; }
+    c.querySelector(".img").onclick = () => DEREditor.open(d, {
       logos: ESTADO.logos,
-      onSave: async (dd, blob) => pintar(i, await guardarPieza(lote, dd, blob)),
+      onSave: async (dd, blob) => pintar(await guardarPieza(lote, dd, blob)),
     });
-  }
-  const z = $("#zipLink"); z.classList.remove("off"); z.textContent = "Descargar todo (.zip)";
+  });
 }
 
 $("#fReel").onsubmit = async e => {
@@ -560,34 +619,14 @@ $("#fReel").onsubmit = async e => {
   const fd = new FormData(e.target), box = $("#rReel"), btn = $("button[type=submit]", e.target);
   if (!fd.has("marca_agua")) fd.set("marca_agua", "0");
   btn.disabled = true;
-  box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="reelEstado">Subiendo archivos…</p>';
+  box.innerHTML = progresoHTML("reelEstado", "Subiendo archivos…");
   try {
     (await subirArchivos(files.reelIn, t => $("#reelEstado").textContent = t)).forEach(ref => fd.append("archivos_subidos", ref));
-    $("#reelEstado").textContent = "Preparando el reel…";
     const r = await fetch("/api/reel", { method: "POST", body: fd }), j = await r.json();
-    if (!r.ok) { btn.disabled = false; return showError(box, j.error); }
-    const t0 = Date.now();
-    const poll = async () => {
-      const s = await (await fetch("/api/reel/" + j.job)).json();
-      if (s.estado === "procesando") {
-        $("#reelEstado").textContent = `Editando el reel… ${Math.round((Date.now() - t0) / 1000)} s`;
-        return setTimeout(poll, 1500);
-      }
-      btn.disabled = false;
-      if (s.estado === "error") return showError(box, s.error);
-      ReelEditor.open(box, s, {
-        musicas: [...$("#musicaSel").options].map(o => [o.value, o.textContent]),
-        compartir: puedeCompartir ? url => compartir(url, url.split("/").pop(), "video/mp4") : null,
-      });
-    };
-    poll();
-  } catch (err) { btn.disabled = false; showError(box, sinConexion(err)); }
+    if (!r.ok) return showError(box, j.error);
+    seguirTrabajo(j.job, "reel");
+  } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
 };
-
-const AYUDA_PLANTILLA = {{ template_hints|tojson }};
-document.querySelectorAll("input[name=plantilla]").forEach(r => r.onchange = () => {
-  $("#plantillaAyuda").textContent = AYUDA_PLANTILLA[r.value] || "";
-});
 
 $("#fCarrusel").onsubmit = async e => {
   e.preventDefault();
@@ -595,63 +634,184 @@ $("#fCarrusel").onsubmit = async e => {
   if (!files.carIn.length) return showError(box, "Subí al menos una foto o un video.");
   if (files.carIn.length > 20) return showError(box, "Instagram permite hasta 20 diapositivas por carrusel.");
   btn.disabled = true;
-  box.innerHTML = '<div class="progreso"><div></div></div><p class="hint" id="carEstado">Subiendo archivos…</p>';
+  box.innerHTML = progresoHTML("carEstado", "Subiendo archivos…");
   try {
     (await subirArchivos(files.carIn, t => $("#carEstado").textContent = t)).forEach(ref => fd.append("archivos_subidos", ref));
     const r = await fetch("/api/carrusel", { method: "POST", body: fd }), j = await r.json();
-    if (!r.ok) { btn.disabled = false; return showError(box, j.error); }
-    const t0 = Date.now();
-    let s;
-    do {
-      await new Promise(ok => setTimeout(ok, 1500));
-      s = await (await fetch("/api/reel/" + j.job)).json();
-      if (s.estado === "procesando") $("#carEstado").textContent = `Armando las diapositivas… ${Math.round((Date.now() - t0) / 1000)} s`;
-    } while (s.estado === "procesando");
-    btn.disabled = false;
-    if (s.estado === "error") return showError(box, s.error);
-    mostrarCarrusel(box, s.lote, s.diapositivas);
-  } catch (err) { btn.disabled = false; showError(box, sinConexion(err)); }
+    if (!r.ok) return showError(box, j.error);
+    seguirTrabajo(j.job, "carrusel");
+  } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
 };
 
-/** Diapositivas del carrusel en orden: fotos editables (se componen acá) y videos. */
+/** Diapositivas del carrusel en orden: fotos (ya terminadas en el servidor, editables) y videos. */
 async function mostrarCarrusel(box, lote, slides) {
-  box.innerHTML = `<div class="acciones"><a class="prim off" id="carZip" href="/api/zip/${lote}">Preparando…</a>
-      ${puedeCompartir ? `<a href="#" class="off" id="carShare">Compartir todo</a>` : ""}</div>
+  box.innerHTML = `<div class="acciones"><a class="prim" id="carZip" href="/api/zip/${lote}">Descargar todo (.zip)</a>
+      ${puedeCompartir ? `<a href="#" id="carShare">Compartir todo</a>` : ""}</div>
     <p class="hint" style="margin:-6px 0 14px">Tocá una foto para editarla (textos, logo, color de fondo). Los videos van tal cual.</p>
     <div class="grid">${slides.map((sl, i) => `<figure class="pieza" data-i="${i}">
       ${sl.tipo === "video"
         ? `<div class="img vid"><video src="${sl.archivo}" muted playsinline loop preload="metadata" controls></video></div>`
-        : `<div class="img">Componiendo…</div>`}
+        : `<div class="img"><img src="${sl.diseno.final}" alt="" loading="lazy"></div>`}
       <figcaption><span>${String(i + 1).padStart(2, "0")} · ${sl.tipo === "video" ? "video " + String(sl.segundos).replace(".", ",") + " s" : "foto"}</span>
-      <span class="acc"><a download class="dl" ${sl.tipo === "video" ? `href="${sl.archivo}"` : "hidden"}>Descargar</a></span></figcaption></figure>`).join("")}</div>`;
-  const cards = box.querySelectorAll(".pieza"), finales = [];
-  for (const [i, sl] of slides.entries()) {
-    if (sl.tipo === "video") { finales[i] = [sl.archivo, sl.archivo.split("/").pop(), "video/mp4"]; continue; }
+      <span class="acc"><a download class="dl" href="${sl.tipo === "video" ? sl.archivo : sl.diseno.final}">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
+  const cards = box.querySelectorAll(".pieza");
+  const finales = slides.map(sl => sl.tipo === "video"
+    ? [sl.archivo, sl.archivo.split("/").pop(), "video/mp4"]
+    : [sl.diseno.final.split("?")[0], sl.diseno.name + ".jpg", "image/jpeg"]);
+  slides.forEach((sl, i) => {
+    if (sl.tipo === "video") return;
     const d = sl.diseno, c = cards[i];
-    const pintar = url => {
-      c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
-      const a = c.querySelector("a.dl"); a.href = url; a.hidden = false; a.download = d.name + ".jpg";
-      finales[i] = [url.split("?")[0], d.name + ".jpg", "image/jpeg"];
-    };
-    try { pintar(await guardarPieza(lote, d, await DEREditor.render(d))); }
-    catch (err) { c.querySelector(".img").textContent = "Error al componer: " + err; }
     c.querySelector(".img").onclick = () => DEREditor.open(d, {
-      logos: ESTADO.logos, onSave: async (dd, blob) => pintar(await guardarPieza(lote, dd, blob)),
+      logos: ESTADO.logos,
+      onSave: async (dd, blob) => {
+        const url = await guardarPieza(lote, dd, blob);
+        c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+        c.querySelector("a.dl").href = url;
+        finales[i] = [url.split("?")[0], d.name + ".jpg", "image/jpeg"];
+      },
     });
-  }
-  const z = $("#carZip"); z.classList.remove("off"); z.textContent = "Descargar todo (.zip)";
+  });
   const sh = $("#carShare");
-  if (sh) {
-    sh.classList.remove("off");
-    sh.onclick = async ev => {
-      ev.preventDefault();
-      try {
-        const fl = await Promise.all(finales.filter(Boolean).map(async ([u, n, t]) => new File([await (await fetch(u)).blob()], n, { type: t })));
-        if (navigator.canShare && navigator.canShare({ files: fl })) await navigator.share({ files: fl });
-        else alert("Este celular no deja compartir varios archivos juntos: usá Descargar todo.");
-      } catch (err) { if (err.name !== "AbortError") alert("No se pudo compartir: " + err.message); }
-    };
+  if (sh) sh.onclick = async ev => {
+    ev.preventDefault();
+    try {
+      const fl = await Promise.all(finales.map(async ([u, n, t]) => new File([await (await fetch(u)).blob()], n, { type: t })));
+      if (navigator.canShare && navigator.canShare({ files: fl })) await navigator.share({ files: fl });
+      else alert("Este celular no deja compartir varios archivos juntos: usá Descargar todo.");
+    } catch (err) { if (err.name !== "AbortError") alert("No se pudo compartir: " + err.message); }
+  };
+}
+
+// --- Trabajos en segundo plano ----------------------------------------------------
+// Cada trabajo se anota en el celular (localStorage). Si salís de la app y volvés, o si Safari
+// recarga la página, se retoma la espera y aparece el resultado. El servidor sigue trabajando igual.
+const PANEL = { piezas: ["graficos", "#rGraficos"], reel: ["reels", "#rReel"], carrusel: ["carrusel", "#rCarrusel"] };
+const anotados = () => JSON.parse(localStorage.getItem("derTrabajos") || "[]");
+const anotar = l => localStorage.setItem("derTrabajos", JSON.stringify(l));
+const esperando = new Set();
+const ETIQUETA_TRABAJO = { reel: "Editando el reel", carrusel: "Armando las diapositivas", piezas: "Armando las piezas" };
+
+function seguirTrabajo(id, tipo, mostrar = true) {
+  if (!anotados().some(t => t.id === id)) anotar([...anotados(), { id, tipo, inicio: Date.now() }]);
+  if (esperando.has(id)) return;
+  esperando.add(id);
+  const [tab, sel] = PANEL[tipo];
+  const box = $(sel);
+  if (mostrar) {
+    irA(tab);
+    box.innerHTML = progresoHTML("est-" + id, "Procesando…") + `<p class="segundo-plano">Ya podés salir de la app: DER Studio sigue trabajando${
+      avisosActivos() ? " y te avisa cuando termine" : ". Cuando vuelvas, el resultado aparece acá y en <b>Recientes</b>"}.</p>`;
   }
+  const t0 = Date.now();
+  const poll = async () => {
+    let s;
+    try { s = await (await fetch("/api/trabajo/" + id)).json(); }
+    catch (_) { return setTimeout(poll, 3000); }  // app pausada o sin red: se reintenta solo
+    if (s.estado === "procesando") {
+      const el = $("#est-" + id);
+      if (el) el.textContent = `${ETIQUETA_TRABAJO[tipo]}… ${s.progreso ? s.progreso + " · " : ""}${Math.round((Date.now() - (s.inicio * 1000 || t0)) / 1000)} s`;
+      return setTimeout(poll, 2000);
+    }
+    esperando.delete(id);
+    anotar(anotados().filter(t => t.id !== id));
+    if (s.estado === "error") { irA(tab); return showError(box, s.error); }
+    irA(tab);
+    mostrarResultado(tipo, box, s);
+    if (document.hidden === false) box.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  poll();
+}
+
+function mostrarResultado(tipo, box, s) {
+  if (tipo === "piezas") return mostrarPiezas(box, s.lote, s.disenos);
+  if (tipo === "carrusel") return mostrarCarrusel(box, s.lote, s.diapositivas);
+  if (s.proyecto) return ReelEditor.open(box, s, {
+    musicas: [...$("#musicaSel").options].map(o => [o.value, o.textContent]),
+    compartir: puedeCompartir ? url => compartir(url, url.split("/").pop(), "video/mp4") : null,
+  });
+  box.innerHTML = `<video class="final" src="${s.archivo}" controls playsinline></video>
+    <div class="acciones" style="justify-content:center"><a class="prim" href="${s.archivo}" download>Descargar reel (.mp4)</a></div>`;
+}
+
+function irA(tab) {
+  document.querySelectorAll("nav button, .panel").forEach(x => x.classList.remove("on"));
+  document.querySelector(`nav button[data-tab="${tab}"]`).classList.add("on");
+  $("#" + tab).classList.add("on");
+  if (tab === "recientes") cargarRecientes();
+}
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => irA(b.dataset.tab));
+
+/** Retoma los trabajos anotados (al abrir la app o al volver a ella). */
+function retomar() { anotados().forEach(t => seguirTrabajo(t.id, t.tipo, !esperando.size)); }
+document.addEventListener("visibilitychange", () => { if (!document.hidden) retomar(); });
+
+async function abrirLote(lote) {
+  const r = await fetch("/api/lote/" + encodeURIComponent(lote));
+  if (!r.ok) return alert("No encuentro ese trabajo (puede que se haya borrado).");
+  const s = await r.json();
+  const [tab, sel] = PANEL[s.tipo];
+  irA(tab);
+  mostrarResultado(s.tipo, $(sel), { ...s, lote });
+  $(sel).scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function cargarRecientes() {
+  const box = $("#recLista");
+  box.innerHTML = '<p class="hint">Cargando…</p>';
+  const { items } = await (await fetch("/api/recientes")).json();
+  if (!items.length) { box.innerHTML = '<div class="vacio">Todavía no generaste nada en los últimos 14 días.</div>'; return; }
+  const nombre = { reel: "Reel", carrusel: "Carrusel", piezas: "Piezas" };
+  box.innerHTML = items.map(it => `<button type="button" class="rec" data-lote="${it.lote}" data-trabajo="${it.trabajo || ""}" data-tipo="${it.tipo}">
+      <span class="rec-img">${it.miniatura ? `<img src="${it.miniatura}" alt="" loading="lazy">` : `<span class="rec-ph">${it.tipo === "reel" ? "▶" : "▦"}</span>`}</span>
+      <span class="rec-txt"><b>${nombre[it.tipo]}${it.tipo === "piezas" && it.plantilla ? " · " + it.plantilla : ""}</b>
+        <small>${it.fecha}${it.trabajo ? " · <em>procesando…</em>" : it.n ? ` · ${it.n} ${it.tipo === "reel" ? (it.n > 1 ? "versiones" : "versión") : (it.n > 1 ? "archivos" : "archivo")}` : ""}</small></span>
+    </button>`).join("");
+  box.querySelectorAll(".rec").forEach(b => b.onclick = () =>
+    b.dataset.trabajo ? seguirTrabajo(b.dataset.trabajo, b.dataset.tipo) : abrirLote(b.dataset.lote));
+}
+
+// --- Avisos al celular -------------------------------------------------------------
+const esIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+const instalada = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+const avisosActivos = () => "Notification" in window && Notification.permission === "granted" && localStorage.getItem("derAvisos") === "1";
+
+async function activarAvisos() {
+  if (esIOS && !instalada) {
+    return alert("En iPhone los avisos funcionan con DER Studio agregado a la pantalla de inicio:\nCompartir → Agregar a pantalla de inicio, y abrilo desde ese ícono.");
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return alert("Este navegador no permite avisos.");
+  const { clave, disponible } = await (await fetch("/api/avisos/clave")).json();
+  if (!disponible) return alert("Los avisos todavía no están disponibles en el servidor.");
+  const permiso = await Notification.requestPermission();
+  if (permiso !== "granted") return alert("Sin permiso no puedo avisarte. Podés activarlo en los ajustes del celular.");
+  const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  await navigator.serviceWorker.ready;
+  const key = Uint8Array.from(atob(clave.replace(/-/g, "+").replace(/_/g, "/") + "==".slice((clave.length + 2) % 4 || 2)), c => c.charCodeAt(0));
+  const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  await fetch("/api/avisos/suscribir", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(sub) });
+  localStorage.setItem("derAvisos", "1");
+  pintarBotonAvisos();
+  fetch("/api/avisos/probar", { method: "POST" });
+}
+function pintarBotonAvisos() {
+  const b = $("#btnAvisos");
+  b.classList.toggle("on", avisosActivos());
+  b.title = avisosActivos() ? "Avisos activados" : "Activar avisos cuando termine";
+  b.querySelector("span").textContent = avisosActivos() ? "Avisos activados" : "Avisarme";
+}
+$("#btnAvisos").onclick = () => avisosActivos() ? alert("Los avisos ya están activados en este celular.") : activarAvisos().catch(e => alert("No se pudieron activar los avisos: " + e.message));
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
+  navigator.serviceWorker.addEventListener("message", e => { if (e.data && e.data.abrir) abrirDesdeUrl(new URL(e.data.abrir)); });
+}
+
+/** Al tocar un aviso se abre /?trabajo=<id>: se muestra ese resultado. */
+async function abrirDesdeUrl(u) {
+  const id = u.searchParams.get("trabajo");
+  if (!id) return;
+  history.replaceState(null, "", "/");
+  const s = await (await fetch("/api/trabajo/" + id)).json().catch(() => null);
+  if (s && s.tipo) seguirTrabajo(id, s.tipo);
 }
 
 let ESTADO = { logos: [] };
@@ -751,6 +911,9 @@ $("#fKit").onsubmit = async e => {
   e.target.reset(); cargarEstado();
 };
 cargarEstado();
+pintarBotonAvisos();
+retomar();
+abrirDesdeUrl(new URL(location.href));
 </script>
 </body>
 </html>

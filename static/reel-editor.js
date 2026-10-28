@@ -204,6 +204,8 @@ const ReelEditor = (() => {
                                                     body: JSON.stringify({ lote: p.lote, proyecto: p }) });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || "No se pudo aplicar.");
+        // la app sigue el trabajo en segundo plano: se puede salir y volver (o esperar el aviso)
+        if (window.seguirTrabajo) { busy = false; window.seguirTrabajo(j.job, "reel"); return; }
         const t0 = Date.now();
         let s;
         do {

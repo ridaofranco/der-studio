@@ -3,3 +3,4 @@ pillow>=10.0
 numpy>=1.26
 imageio-ffmpeg>=0.5
 pillow-heif>=0.16
+pywebpush>=2.0

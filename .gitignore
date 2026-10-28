@@ -14,3 +14,5 @@ ejemplos/
 brand/fonts/*
 !brand/fonts/Jost-*.ttf
 !brand/fonts/Fallback-Titulos-Orbitron.ttf
+# claves y suscripciones de los avisos al celular
+.avisos/
