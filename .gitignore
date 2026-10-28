@@ -10,3 +10,7 @@ brand/music/*
 !brand/music/.keep
 ejemplos/
 .secreto
+# Tipografías con licencia (Netron, Articulat CF): se cargan en cada instalación, nunca al repo público
+brand/fonts/*
+!brand/fonts/Jost-*.ttf
+!brand/fonts/Fallback-Titulos-Orbitron.ttf

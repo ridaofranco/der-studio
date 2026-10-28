@@ -5,6 +5,8 @@ Usa el ffmpeg que viene con el paquete imageio-ffmpeg (no hace falta instalarlo 
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import random
 import re
 import shutil
@@ -21,6 +23,29 @@ from .brand import DARK, LIGHT, ORANGE, WHITE
 W, H, FPS = 1080, 1920, 30
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic"}
 
+# Transiciones de ffmpeg (xfade) que se ofrecen en el editor, con su nombre en castellano
+TRANSITIONS = {
+    "fade": "Fundido",
+    "fadeblack": "Fundido a negro",
+    "fadewhite": "Fundido a blanco",
+    "dissolve": "Disolver",
+    "slideleft": "Deslizar a la izquierda",
+    "slideright": "Deslizar a la derecha",
+    "slideup": "Deslizar hacia arriba",
+    "slidedown": "Deslizar hacia abajo",
+    "smoothleft": "Barrido suave",
+    "smoothup": "Subir",
+    "wipeleft": "Cortina",
+    "circleopen": "Círculo",
+    "zoomin": "Zoom",
+    "radial": "Radial",
+    "hblur": "Desenfoque",
+    "pixelize": "Pixelado",
+    "none": "Corte seco",
+}
+MIN_CLIP = 0.5        # segundos mínimos de un clip
+MAX_PHOTO = 15.0      # segundos máximos de una foto
+
 
 @dataclass
 class ReelOptions:
@@ -36,7 +61,30 @@ class ReelOptions:
     watermark: bool = True
     outro_seconds: float = 3.0
     logo: str = "auto"                # auto | nombre de archivo en brand/logos
+    music_seed: int = 0               # misma semilla = misma música al volver a editar
     log: list[str] = field(default_factory=list)
+
+    EDITABLE = ("title", "subtitle", "music", "music_volume", "keep_original_audio", "watermark", "logo",
+                "music_seed")
+
+    def to_dict(self) -> dict:
+        return {k: getattr(self, k) for k in self.EDITABLE}
+
+
+@dataclass
+class Clip:
+    """Un tramo del reel. `transition` es la que va entre este clip y el siguiente."""
+    src: str                          # nombre del archivo en <lote>/fuentes
+    kind: str                         # video | foto
+    source_duration: float
+    start: float
+    end: float
+    transition: str = "fade"
+    transition_seconds: float = 0.4
+
+    @property
+    def duration(self) -> float:
+        return self.end - self.start
 
 
 def ffmpeg_exe() -> str:
@@ -134,14 +182,7 @@ def render_watermark(path: Path, logo_choice: str = "auto") -> Path:
 
 # --- Pipeline ---------------------------------------------------------------
 
-def _normalize_video(src: Path, dst: Path, opts: ReelOptions, info: dict) -> float:
-    dur = info["duration"]
-    if opts.max_clip_seconds and dur > opts.max_clip_seconds:
-        # tomar el tramo central, que suele ser el más interesante
-        start = (dur - opts.max_clip_seconds) / 2
-        dur = opts.max_clip_seconds
-    else:
-        start = 0.0
+def _normalize_video(src: Path, dst: Path, opts: ReelOptions, info: dict, start: float, dur: float) -> float:
     landscape = info["w"] > info["h"] * 1.05
     if landscape:
         # video horizontal: va completo al centro con el mismo video desenfocado de fondo
@@ -164,20 +205,19 @@ def _normalize_video(src: Path, dst: Path, opts: ReelOptions, info: dict) -> flo
     return probe(dst)["duration"]
 
 
-def _photo_clip(src: Path, dst: Path, opts: ReelOptions, tmp: Path) -> float:
+def _photo_clip(src: Path, dst: Path, seconds: float, tmp: Path, log: list[str], zin: bool = True) -> float:
     """Foto -> clip con zoom lento (Ken Burns)."""
     img = graphics.cover(graphics.load_photo(src), W * 2, H * 2)
     still = tmp / f"{dst.stem}.jpg"
     img.save(still, quality=95)
-    frames = int(opts.photo_seconds * FPS)
-    zin = random.choice([True, False])
+    frames = int(seconds * FPS)
     z = "min(1+0.0009*on,1.15)" if zin else "max(1.15-0.0009*on,1)"
     vf = (f"zoompan=z='{z}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={W}x{H}:fps={FPS},"
           f"format=yuv420p,setsar=1")
-    _run(["ffmpeg", "-y", "-i", str(still), "-f", "lavfi", "-t", f"{opts.photo_seconds}",
+    _run(["ffmpeg", "-y", "-i", str(still), "-f", "lavfi", "-t", f"{seconds}",
           "-i", "anullsrc=r=44100:cl=stereo", "-vf", vf, "-frames:v", str(frames),
           "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-ar", "44100",
-          "-ac", "2", "-shortest", str(dst)], opts.log)
+          "-ac", "2", "-shortest", str(dst)], log)
     return probe(dst)["duration"]
 
 
@@ -193,11 +233,9 @@ def _outro_clip(dst: Path, opts: ReelOptions, tmp: Path) -> float:
     return probe(dst)["duration"]
 
 
-def _join(clips: list[tuple[Path, float]], opts: ReelOptions, overlays: list[tuple[Path, float, float]],
-          dst: Path) -> float:
-    """Une los clips con transiciones y aplica superposiciones (título, marca de agua)."""
-    T = opts.transition_seconds if opts.transition != "none" else 0
-    T = min(T, *(d / 2 for _, d in clips)) if clips else 0
+def _join(clips: list[tuple[Path, float]], transitions: list[tuple[str, float]],
+          overlays: list[tuple[Path, float, float]], dst: Path, log: list[str]) -> float:
+    """Une los clips (una transición por corte) y aplica superposiciones (título, marca de agua)."""
     cmd = ["ffmpeg", "-y"]
     for p, _ in clips:
         cmd += ["-i", str(p)]
@@ -208,8 +246,10 @@ def _join(clips: list[tuple[Path, float]], opts: ReelOptions, overlays: list[tup
     acc = clips[0][1]
     for i in range(1, len(clips)):
         dur = clips[i][1]
+        name, T = transitions[i - 1] if i - 1 < len(transitions) else ("fade", 0.4)
+        T = 0 if name == "none" else min(T, clips[i - 1][1] / 2, dur / 2)
         if T > 0:
-            parts.append(f"{v_prev}[{i}:v]xfade=transition={opts.transition}:duration={T:.3f}:"
+            parts.append(f"{v_prev}[{i}:v]xfade=transition={name}:duration={T:.3f}:"
                          f"offset={acc - T:.3f}[v{i}]")
             parts.append(f"{a_prev}[{i}:a]acrossfade=d={T:.3f}[a{i}]")
             acc += dur - T
@@ -233,7 +273,7 @@ def _join(clips: list[tuple[Path, float]], opts: ReelOptions, overlays: list[tup
     cmd += ["-filter_complex", ";".join(parts), "-map", v_prev, "-map", a_prev if a_prev != "[0:a]" else "0:a",
             "-t", f"{acc:.3f}", "-c:v", "libx264", "-preset", "medium", "-crf", "19",
             "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "44100", "-ac", "2", str(dst)]
-    _run(cmd, opts.log)
+    _run(cmd, log)
     return acc
 
 
@@ -244,7 +284,7 @@ def _add_music(src: Path, duration: float, opts: ReelOptions, tmp: Path, dst: Pa
         return
     if choice.startswith("auto"):
         style = choice.split(":", 1)[1] if ":" in choice else "energico"
-        track = music.generate(duration + 0.5, tmp / "music.wav", style, seed=random.randint(0, 10**6))
+        track = music.generate(duration + 0.5, tmp / "music.wav", style, seed=opts.music_seed)
         loop = []
     else:
         track = brand.MUSIC_DIR / Path(choice).name
@@ -261,19 +301,87 @@ def _add_music(src: Path, duration: float, opts: ReelOptions, tmp: Path, dst: Pa
           "-movflags", "+faststart", "-t", f"{duration:.3f}", str(dst)], opts.log)
 
 
-def generate(inputs: list[Path], out_path: Path, opts: ReelOptions) -> Path:
-    if not inputs:
-        raise ValueError("Subí al menos un video o foto.")
+def build_project(inputs: list[Path], opts: ReelOptions) -> dict:
+    """Arma el proyecto editable a partir de los archivos subidos (ya guardados en <lote>/fuentes)."""
+    clips = []
+    t_sec = opts.transition_seconds
+    for src in inputs:
+        if src.suffix.lower() in IMAGE_EXT:
+            d = float(opts.photo_seconds)
+            clips.append(Clip(src.name, "foto", d, 0.0, d, opts.transition, t_sec))
+            continue
+        dur = probe(src)["duration"]
+        if dur <= 0:
+            raise ValueError(f"No pude leer el video {src.name}.")
+        start, end = 0.0, dur
+        if opts.max_clip_seconds and dur > opts.max_clip_seconds:
+            # tomar el tramo central, que suele ser el más interesante
+            start = (dur - opts.max_clip_seconds) / 2
+            end = start + opts.max_clip_seconds
+        clips.append(Clip(src.name, "video", round(dur, 2), round(start, 2), round(end, 2), opts.transition, t_sec))
+    if not opts.music_seed:
+        opts.music_seed = random.randint(1, 10**6)
+    return {"version": 0, "clips": [c.__dict__ for c in clips], "opciones": opts.to_dict()}
+
+
+def clean_project(data: dict, fuentes: Path) -> dict:
+    """Valida un proyecto que viene del navegador (no confiar en nada)."""
+    clips = []
+    for c in data.get("clips") or []:
+        src = Path(str(c.get("src", ""))).name
+        if not src or not (fuentes / src).is_file():
+            raise ValueError(f"No encuentro el archivo {src or '?'} de este reel.")
+        kind = "foto" if Path(src).suffix.lower() in IMAGE_EXT else "video"
+        if kind == "foto":
+            secs = min(MAX_PHOTO, max(MIN_CLIP, float(c.get("end", 3)) - float(c.get("start", 0))))
+            source, start, end = secs, 0.0, secs
+        else:
+            source = probe(fuentes / src)["duration"]
+            start = min(max(0.0, float(c.get("start", 0))), max(0.0, source - MIN_CLIP))
+            end = min(source, max(start + MIN_CLIP, float(c.get("end", source))))
+        trans = c.get("transition") if c.get("transition") in TRANSITIONS else "fade"
+        t_sec = min(1.5, max(0.2, float(c.get("transition_seconds", 0.4))))
+        clips.append(Clip(src, kind, round(source, 2), round(start, 2), round(end, 2), trans, t_sec))
+    if not clips:
+        raise ValueError("El reel tiene que tener al menos un clip.")
+    o = data.get("opciones") or {}
+    opts = ReelOptions(
+        title=str(o.get("title", ""))[:140], subtitle=str(o.get("subtitle", ""))[:140],
+        music=str(o.get("music", "auto:energico")), music_volume=min(1.5, max(0.0, float(o.get("music_volume", 0.9)))),
+        keep_original_audio=bool(o.get("keep_original_audio")), watermark=bool(o.get("watermark", True)),
+        logo=str(o.get("logo", "auto")), music_seed=int(o.get("music_seed") or random.randint(1, 10**6)),
+    )
+    return {"version": int(data.get("version", 0)), "clips": [c.__dict__ for c in clips], "opciones": opts.to_dict()}
+
+
+def _cached(cache: Path, key: str) -> Path:
+    return cache / (hashlib.sha1(key.encode()).hexdigest()[:16] + ".mp4")
+
+
+def render_project(project: dict, lote: Path, out_path: Path, log: list[str] | None = None) -> Path:
+    """Renderiza el proyecto. Los clips ya preparados se reutilizan (cache), así que cambiar
+    solo una transición o el título no vuelve a procesar todos los videos."""
+    log = log if log is not None else []
+    fuentes, cache = lote / "fuentes", lote / "cache"
+    cache.mkdir(exist_ok=True)
+    opts = ReelOptions(**project["opciones"], log=log)
+    clips = [Clip(**c) for c in project["clips"]]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="der-reel-", ignore_cleanup_errors=True) as td:
         tmp = Path(td)
-        clips: list[tuple[Path, float]] = []
-        for i, src in enumerate(inputs):
-            dst = tmp / f"clip{i:02d}.mp4"
-            if src.suffix.lower() in IMAGE_EXT:
-                clips.append((dst, _photo_clip(src, dst, opts, tmp)))
+        parts: list[tuple[Path, float]] = []
+        for c in clips:
+            src = fuentes / c.src
+            if c.kind == "foto":
+                dst = _cached(cache, f"foto|{c.src}|{c.duration:.2f}")
+                if not dst.exists():
+                    zin = int(hashlib.sha1(c.src.encode()).hexdigest(), 16) % 2 == 0
+                    _photo_clip(src, dst, c.duration, tmp, log, zin)
             else:
-                clips.append((dst, _normalize_video(src, dst, opts, probe(src))))
+                dst = _cached(cache, f"video|{c.src}|{c.start:.2f}|{c.end:.2f}|{opts.keep_original_audio}")
+                if not dst.exists():
+                    _normalize_video(src, dst, opts, probe(src), c.start, c.duration)
+            parts.append((dst, probe(dst)["duration"]))
 
         overlays = []
         if opts.watermark:
@@ -281,12 +389,45 @@ def generate(inputs: list[Path], out_path: Path, opts: ReelOptions) -> Path:
         if opts.title or opts.subtitle:
             overlays.append((render_title_overlay(tmp / "title.png", opts.title, opts.subtitle), 0.2, 3.6))
         body = tmp / "body.mp4"
-        body_dur = _join(clips, opts, overlays, body)
+        body_dur = _join(parts, [(c.transition, c.transition_seconds) for c in clips[:-1]], overlays, body, log)
 
-        outro = tmp / "outro.mp4"
-        outro_dur = _outro_clip(outro, opts, tmp)
+        outro = _cached(cache, f"outro|{opts.logo}|{opts.outro_seconds}")
+        if not outro.exists():
+            _outro_clip(outro, opts, tmp)
         full = tmp / "full.mp4"
-        total = _join([(body, body_dur), (outro, outro_dur)],
-                      ReelOptions(transition="fade", transition_seconds=0.5, log=opts.log), [], full)
+        total = _join([(body, body_dur), (outro, probe(outro)["duration"])], [("fade", 0.5)], [], full, log)
         _add_music(full, total, opts, tmp, out_path)
     return out_path
+
+
+def thumbnail(src: Path, dst: Path, at: float) -> Path:
+    """Miniatura vertical para la línea de tiempo del editor."""
+    if src.suffix.lower() in IMAGE_EXT:
+        graphics.cover(graphics.load_photo(src), 180, 320).save(dst, quality=80)
+        return dst
+    _run(["ffmpeg", "-y", "-ss", f"{max(0, at):.2f}", "-i", str(src), "-frames:v", "1",
+          "-vf", "scale=180:320:force_original_aspect_ratio=increase,crop=180:320", "-q:v", "5", str(dst)], [])
+    return dst
+
+
+def preview_proxy(src: Path, dst: Path) -> Path:
+    """Copia liviana del video (360p) para elegir el tramo desde el celular."""
+    _run(["ffmpeg", "-y", "-i", str(src), "-vf", "scale=-2:360", "-c:v", "libx264", "-preset", "ultrafast",
+          "-crf", "30", "-c:a", "aac", "-b:a", "64k", "-movflags", "+faststart", str(dst)], [])
+    return dst
+
+
+def generate(inputs: list[Path], out_path: Path, opts: ReelOptions) -> Path:
+    """Compatibilidad: arma el proyecto y lo renderiza en la carpeta de salida."""
+    if not inputs:
+        raise ValueError("Subí al menos un video o foto.")
+    lote = out_path.parent
+    (lote / "fuentes").mkdir(parents=True, exist_ok=True)
+    srcs = []
+    for p in inputs:
+        dst = lote / "fuentes" / p.name
+        if not dst.exists():
+            shutil.copy(p, dst)
+        srcs.append(dst)
+    project = build_project(srcs, opts)
+    return render_project(project, lote, out_path, opts.log)

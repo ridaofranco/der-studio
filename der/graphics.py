@@ -13,6 +13,12 @@ Plantillas:
   texto     solo texto sobre gris oscuro (sin foto)
   naranja   solo texto sobre naranja (sin foto)
   collage   2 a 4 fotos en grilla + franja con el texto
+  cita      frase grande con comillas naranjas (título = frase, subtítulo = quién la dijo)
+  dato      un número enorme (título = número, subtítulo = qué es, texto = contexto); foto opcional de fondo
+  lista     título + puntos numerados (una línea del texto = un punto)
+  comparar  dos fotos lado a lado con etiquetas ANTES / DESPUÉS
+  agenda    evento: foto opcional + bloque de fecha (subtítulo = fecha, texto = lugar y hora)
+  cinta     foto impresa con borde blanco, levemente girada y pegada con cinta naranja
 
 En el título, las palabras entre *asteriscos* se resaltan en naranja.
 """
@@ -42,8 +48,25 @@ TEMPLATES = {
     "collage": "Collage (2-4 fotos)",
     "texto": "Solo texto (gris)",
     "naranja": "Solo texto (naranja)",
+    "cita": "Frase / cita",
+    "dato": "Dato / número grande",
+    "lista": "Lista de puntos",
+    "comparar": "Antes / después (2 fotos)",
+    "agenda": "Evento / agenda",
+    "cinta": "Foto con cinta",
 }
-PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage"}
+PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta"}
+# Plantillas que arman UNA pieza con todas las fotos (las demás hacen una pieza por foto = carrusel)
+SINGLE_DESIGN = {"texto", "naranja", "collage", "cita", "dato", "lista", "comparar", "agenda"}
+# Qué va en cada campo (se muestra en el formulario al elegir la plantilla)
+TEMPLATE_HINTS = {
+    "cita": "Título = la frase · Subtítulo = quién la dijo. No usa fotos.",
+    "dato": "Título = el número (ej. +40.000) · Subtítulo = qué es · Texto = contexto. Si subís una foto, va de fondo.",
+    "lista": "Título arriba · Texto = un punto por renglón (hasta 6).",
+    "comparar": "Subí 2 fotos: la primera es ANTES, la segunda DESPUÉS. Título abajo.",
+    "agenda": "Título = nombre del evento · Subtítulo = fecha (ej. 15 NOV) · Texto = lugar y hora. Foto opcional.",
+    "cinta": "Una pieza por foto. Título y subtítulo debajo de la foto.",
+}
 FONT_FAMILY = {"title": "DER Titulo", "subtitle": "DER Sub", "body": "DER Cuerpo"}
 
 
@@ -459,6 +482,224 @@ def tpl_collage(fmt, photos, c, first=True):
     return D
 
 
+# --- Plantillas nuevas (oct 2026) -------------------------------------------------
+
+def _fit_lines(text, role, w, max_h, size, min_size, gap, upper=False, max_lines=None):
+    f, lines, _ = fit_text(text, role, w, max_h, size, min_size, gap, max_lines, upper)
+    return f.size, lines
+
+
+def tpl_cita(fmt, photos, c, first=True):
+    """Frase grande sobre gris claro, comillas naranjas gigantes y firma."""
+    D = Design(fmt, c, LIGHT)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 96 * s
+    D.logo("on_light", 170 * s, m, top)
+    D.dots(W - m - 4 * 26 * s, top + 12 * s, 5, 3, 26 * s, 4 * s, ORANGE)
+    q = int(300 * s)
+    box_w = W - 2 * m
+    quote = c.title or c.body or c.subtitle
+    size, lines = _fit_lines(quote, "subtitle", box_w, (H - top - bottom) * 0.5, int(78 * s), int(38 * s), 1.15)
+    text_h = len(lines) * size * 1.15
+    who_h = 60 * s if c.subtitle and c.title else 0
+    y = top + (H - top - bottom - text_h - who_h - q * 0.55) / 2 + q * 0.55
+    D.text("subtitle", "“", m - 12 * s, y - q * 0.78, q * 0.7, ORANGE, q, 1.0, name="Comillas")
+    D.text("subtitle", "", m, y, box_w, DARK, size, 1.15, hl_color=ORANGE, lines=lines, name="Frase")
+    y += text_h + 36 * s
+    if who_h:
+        D.rect(m, y + 14 * s, 50 * s, 6 * s, ORANGE, "Línea")
+        D.text("body", c.subtitle.upper(), m + 70 * s, y, box_w - 70 * s, DARK, int(30 * s), 1.2, name="Firma")
+    D.tag(W - m, H - bottom, DARK, align="right")
+    return D
+
+
+def tpl_dato(fmt, photos, c, first=True):
+    """Un número enorme en naranja. Con foto, la foto va de fondo bien oscurecida."""
+    D = Design(fmt, c, DARK)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 90 * s
+    if photos:
+        D.base = cover(photos[0], W, H, c.focus)
+        shade = Image.new("RGB", (W, H), DARK_RGB)
+        D.base = Image.blend(D.base, shade, 0.72)
+    D.logo("on_dark", 180 * s, m, top)
+    D.bracket(W - m - 80 * s, top, 80 * s, 9 * s, ORANGE, "tr")
+    box_w = W - 2 * m
+    num = c.title or "+40"
+    nsize, nlines = _fit_lines(num, "title", box_w, H * 0.3, int(300 * s), int(90 * s), 1.0, upper=True, max_lines=2)
+    sub = c.subtitle
+    ssize, slines = _fit_lines(sub, "subtitle", box_w, H * 0.14, int(54 * s), int(30 * s), 1.12) if sub else (0, [])
+    bsize, blines = _fit_lines(c.body, "body", box_w, H * 0.16, int(34 * s), int(24 * s), 1.3) if c.body else (0, [])
+    total_h = (len(nlines) * nsize + 40 * s + len(slines) * ssize * 1.12 + (30 * s if blines else 0)
+               + len(blines) * bsize * 1.3)
+    y = top + (H - top - bottom - total_h) / 2
+    D.text("title", "", m, y, box_w, ORANGE, nsize, 1.0, hl_color=WHITE, lines=nlines, name="Número")
+    y += len(nlines) * nsize + 14 * s
+    D.rect(m, y, box_w, 4 * s, "#5a5a5a", "Línea")
+    D.rect(m, y - 3 * s, 140 * s, 10 * s, ORANGE, "Barra")
+    y += 26 * s
+    if slines:
+        D.text("subtitle", "", m, y, box_w, WHITE, ssize, 1.12, lines=slines, name="Qué es")
+        y += len(slines) * ssize * 1.12 + 30 * s
+    if blines:
+        D.text("body", "", m, y, box_w, LIGHT, bsize, 1.3, lines=blines, name="Texto")
+    D.tag(m, H - bottom + 20 * s, LIGHT)
+    return D
+
+
+def tpl_lista(fmt, photos, c, first=True):
+    """Título + hasta 6 puntos numerados con cuadraditos naranjas."""
+    D = Design(fmt, c, LIGHT)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 90 * s
+    box_w = W - 2 * m
+    items = [ln.strip(" -•·*\t") for ln in (c.body or "").splitlines() if ln.strip(" -•·*\t")][:6]
+    if not items and c.subtitle:
+        items = [x.strip() for x in c.subtitle.split("·") if x.strip()][:6]
+    _, logo_h = D.logo("on_light", 160 * s, m, top)
+    y = top + logo_h + 110 * s
+    if c.title:
+        tsize, tlines = _fit_lines(c.title, "title", box_w, H * 0.22, int(92 * s), int(44 * s), 1.06, upper=True)
+        D.bar(m, y - 34 * s)
+        D.text("title", "", m, y, box_w, DARK, tsize, 1.06, hl_color=ORANGE, lines=tlines, name="Título")
+        y += len(tlines) * tsize * 1.06 + 60 * s
+    if c.subtitle and c.body:
+        D.text("subtitle", c.subtitle, m, y, box_w, ORANGE, int(40 * s), 1.12, name="Subtítulo")
+        y += 80 * s
+    n = max(1, len(items))
+    avail = H - bottom - 60 * s - y
+    row = min(avail / n, 190 * s)
+    sq = int(min(row * 0.62, 84 * s))
+    isize = int(min(46 * s, row * 0.42))
+    for k, it in enumerate(items):
+        D.rect(m, y + (row - sq) / 2 - 8 * s, sq, sq, ORANGE, f"Número {k + 1}")
+        D.text("title", f"{k + 1}", m, y + (row - sq) / 2 - 8 * s + sq * 0.2, sq, WHITE, int(sq * 0.62), 1.0,
+               align="center", name=f"N{k + 1}")
+        size, lines = _fit_lines(it, "subtitle", box_w - sq - 34 * s, row * 0.9, isize, int(24 * s), 1.1, max_lines=2)
+        ty = y + (row - len(lines) * size * 1.1) / 2 - 8 * s
+        D.text("subtitle", "", m + sq + 34 * s, ty, box_w - sq - 34 * s, DARK, size, 1.1, lines=lines,
+               name=f"Punto {k + 1}")
+        if k < n - 1:
+            D.rect(m + sq + 34 * s, y + row - 4 * s, box_w - sq - 34 * s, 2 * s, "#d0d0d0", "Separador")
+        y += row
+    D.tag(W - m, H - bottom + 20 * s, DARK, align="right")
+    return D
+
+
+def tpl_comparar(fmt, photos, c, first=True):
+    """Dos fotos (antes / después) separadas por una línea naranja, con etiquetas."""
+    D = Design(fmt, c, DARK)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 70 * s
+    pair = (photos * 2)[:2]
+    has_text = _has_text(c)
+    strip = int((D.measure(W - 2 * m - 220 * s, H * 0.2, 70) + 90 * s + bottom * 0.5) if has_text else bottom * 0.6 + 60 * s)
+    area_h = H - strip
+    vertical = fmt == "historia"
+    line = int(10 * s)
+    if vertical:
+        h1 = (area_h - line) // 2
+        D.base.paste(cover(pair[0], W, h1, c.focus), (0, 0))
+        D.base.paste(cover(pair[1], W, area_h - h1 - line, c.focus), (0, h1 + line))
+        D.rect(0, h1, W, line, ORANGE, "Divisor")
+        tags = [(m, top), (m, h1 + line + 40 * s)]
+    else:
+        w1 = (W - line) // 2
+        D.base.paste(cover(pair[0], w1, area_h, c.focus), (0, 0))
+        D.base.paste(cover(pair[1], W - w1 - line, area_h, c.focus), (w1 + line, 0))
+        D.rect(w1, 0, line, area_h, ORANGE, "Divisor")
+        tags = [(40 * s, top), (w1 + line + 40 * s, top)]
+    for (tx, ty), label, bg, fg in zip(tags, ("ANTES", "DESPUÉS"), (DARK, ORANGE), (WHITE, WHITE)):
+        tw = (190 if label == "ANTES" else 250) * s
+        D.rect(tx, ty, tw, 64 * s, bg, f"Etiqueta {label.lower()}")
+        D.text("title", label, tx, ty + 15 * s, tw, fg, int(34 * s), 1.0, align="center", name=label.capitalize())
+    D.rect(0, area_h, W, 6 * s, ORANGE, "Línea")
+    if has_text:
+        D.text_block(m, area_h + 50 * s, W - 2 * m - 220 * s, H * 0.2, WHITE, ORANGE, LIGHT, title_size=70)
+    D.logo("on_dark", 170 * s, W - m, area_h + 50 * s, "rt")
+    return D
+
+
+def tpl_agenda(fmt, photos, c, first=True):
+    """Evento: foto arriba (opcional), bloque naranja con la fecha y los datos abajo."""
+    D = Design(fmt, c, DARK)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 80 * s
+    split = int(H * (0.5 if fmt == "historia" else 0.46))
+    if photos:
+        D.base.paste(cover(photos[0], W, split, c.focus), (0, 0))
+        bottom_gradient(D.base, 0.25, 120)
+    else:
+        D.dots(W - m - 8 * 30 * s, top + 120 * s, 9, 6, 30 * s, 4 * s, "#5a5a5a")
+        D.bracket(m, top + 100 * s, 120 * s, 10 * s, ORANGE, "tl")
+    D.logo("on_dark", 180 * s, m, top)
+    # bloque de fecha montado sobre el borde de la foto
+    date = (c.subtitle or "PRÓXIMAMENTE").upper()
+    bw, bh = 420 * s, 230 * s
+    bx, by = m, split - bh * 0.55
+    D.rect(bx, by, bw, bh, ORANGE, "Bloque fecha")
+    dsize, dlines = _fit_lines(date, "title", bw - 60 * s, bh - 60 * s, int(92 * s), int(34 * s), 1.0, upper=True, max_lines=2)
+    dy = by + (bh - len(dlines) * dsize) / 2
+    D.text("title", "", bx + 30 * s, dy, bw - 60 * s, WHITE, dsize, 1.0, lines=dlines, name="Fecha")
+    y = by + bh + 60 * s
+    box_w = W - 2 * m
+    if c.title:
+        tsize, tlines = _fit_lines(c.title, "title", box_w, (H - bottom - y) * 0.55, int(96 * s), int(42 * s), 1.06,
+                                   upper=True)
+        D.text("title", "", m, y, box_w, WHITE, tsize, 1.06, hl_color=ORANGE, lines=tlines, name="Evento")
+        y += len(tlines) * tsize * 1.06 + 30 * s
+    if c.body:
+        D.rect(m, y + 6 * s, 10 * s, 50 * s, ORANGE, "Marca lugar")
+        bsize, blines = _fit_lines(c.body, "subtitle", box_w - 34 * s, H - bottom - y - 60 * s, int(42 * s),
+                                   int(26 * s), 1.2)
+        D.text("subtitle", "", m + 34 * s, y, box_w - 34 * s, LIGHT, bsize, 1.2, lines=blines, name="Lugar y hora")
+    D.tag(W - m, H - bottom + 20 * s, LIGHT, align="right")
+    return D
+
+
+def tpl_cinta(fmt, photos, c, first=True):
+    """Foto 'impresa' con borde blanco, girada apenas y pegada con dos tiras de cinta naranja."""
+    D = Design(fmt, c, LIGHT)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m = 90 * s
+    has_text = first and _has_text(c)
+    box_w = W - 2 * m
+    text_h = D.measure(box_w, H * 0.26, 80) if has_text else 0
+    _, logo_h = D.logo("on_light", 160 * s, m, top)
+    area_top = top + logo_h + 50 * s
+    area_bot = H - bottom - (text_h + 110 * s if has_text else 40 * s)
+    pw = int(W - 2 * m - 40 * s)
+    ph = int(min(area_bot - area_top - 60 * s, pw * 1.25))
+    border = int(26 * s)
+    card = Image.new("RGB", (pw + 2 * border, ph + 2 * border + int(40 * s)), "#ffffff")
+    card.paste(cover(photos[0], pw, ph, c.focus), (border, border))
+    angle = -2.5 if hash(c.title) % 2 == 0 else 2.5
+    shadow = Image.new("RGBA", card.size, (0, 0, 0, 70)).rotate(angle, expand=True, resample=Image.BICUBIC)
+    rot = card.convert("RGBA").rotate(angle, expand=True, resample=Image.BICUBIC)
+    cx = (W - rot.width) // 2
+    cy = int(area_top + (area_bot - area_top - rot.height) / 2)
+    from PIL import ImageFilter
+    D.base.paste(shadow.filter(ImageFilter.GaussianBlur(14 * s)), (cx + int(12 * s), cy + int(18 * s)),
+                 shadow.filter(ImageFilter.GaussianBlur(14 * s)))
+    D.base.paste(rot, (cx, cy), rot)
+    # cintas (en la base, semitransparentes y giradas)
+    tape = Image.new("RGBA", (int(230 * s), int(62 * s)), (255, 92, 0, 215))
+    for tx, ty, ta in ((cx + rot.width - 270 * s, cy - 30 * s, -24), (cx + 30 * s, cy + rot.height - 120 * s, 28)):
+        t = tape.rotate(ta, expand=True, resample=Image.BICUBIC)
+        D.base.paste(t, (int(tx), int(ty)), t)
+    if has_text:
+        D.text_block(m, H - bottom - text_h, box_w, H * 0.26, DARK, ORANGE, DARK, title_size=80)
+    else:
+        D.tag(W - m, H - bottom + 20 * s, DARK, align="right")
+    return D
+
+
 RENDERERS = {
     "impacto": tpl_impacto,
     "marco": tpl_marco,
@@ -466,6 +707,12 @@ RENDERERS = {
     "collage": tpl_collage,
     "texto": tpl_texto,
     "naranja": tpl_naranja,
+    "cita": tpl_cita,
+    "dato": tpl_dato,
+    "lista": tpl_lista,
+    "comparar": tpl_comparar,
+    "agenda": tpl_agenda,
+    "cinta": tpl_cinta,
 }
 
 
@@ -476,10 +723,12 @@ def generate(template: str, formats: list[str], photo_paths: list[Path], content
     photos = [load_photo(p) for p in photo_paths]
     if template in PHOTO_TEMPLATES and not photos:
         raise ValueError("Esta plantilla necesita al menos una foto.")
+    if template == "comparar" and len(photos) < 2:
+        raise ValueError("Antes / después necesita 2 fotos: la primera es ANTES y la segunda DESPUÉS.")
     render = RENDERERS[template]
     designs = []
     for fmt in formats:
-        groups = [photos] if template in ("texto", "naranja", "collage") else [[p] for p in photos]
+        groups = [photos] if template in SINGLE_DESIGN else [[p] for p in photos]
         for i, group in enumerate(groups, 1):
             first = i == 1 or not carousel_text_first_only
             d = render(fmt, group, content, first=first)

@@ -38,9 +38,11 @@ Desde la pestaña **Brand kit** de la app (o copiando los archivos a mano) carg�
 |---|---|---|
 | Logos PNG | carpeta **LOGO SOMOS DER** (dejá los nombres originales, ej. `LOGO-DER-NARANJA-Y-GRIS-CLARO.png`) | `brand/logos/` |
 | Netron (títulos) | `Netron.ttf` | `brand/fonts/` |
-| Articulat CF (subtítulos) | `Articulat CF Font Family.zip` (sirve el .zip tal cual) | `brand/fonts/` |
+| Articulat CF (subtítulos) | `Articulat CF Font Family.zip` (sirve el .zip tal cual). ⚠️ La versión DEMO de Fontspring no trae tildes ni ñ: hace falta la licencia completa | `brand/fonts/` |
 | Jost (cuerpo) | ya está incluida | — |
 | Música propia (opcional) | temas libres de derechos .mp3/.wav | `brand/music/` |
+
+Las tipografías con licencia no se suben a este repositorio (es público): se cargan en cada instalación desde **Brand kit → Tipografías**.
 
 Mientras falten, la app usa reemplazos parecidos (Orbitron para títulos, Jost para subtítulos y un logotipo de texto) y lo avisa con un cartel arriba.
 
@@ -80,6 +82,12 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 | Foto + banda naranja | foto arriba, texto en banda naranja |
 | Collage | 2 a 4 fotos en grilla |
 | Solo texto (gris / naranja) | anuncios, frases, avisos |
+| Frase / cita | título = la frase, subtítulo = quién la dijo; comillas naranjas grandes |
+| Dato / número grande | título = el número (`+40.000`), subtítulo = qué es, texto = contexto; foto opcional de fondo |
+| Lista de puntos | título + un punto por renglón del texto (hasta 6), numerados |
+| Antes / después | 2 fotos (la primera es ANTES) con etiquetas y línea naranja |
+| Evento / agenda | subtítulo = fecha (`15 NOV`) en bloque naranja, título = evento, texto = lugar y hora; foto opcional |
+| Foto con cinta | foto impresa con borde blanco, girada y pegada con cinta naranja; una pieza por foto |
 
 - En el título, lo que pongas `*entre asteriscos*` va resaltado en naranja.
 - Con varias fotos se arma un **carrusel**: el texto va solo en la primera, salvo que marques "Texto en todas".
@@ -92,6 +100,18 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 - Las fotos entran con un zoom lento.
 - Música: genérica sintetizada en el momento (enérgica, corporativa o suave; sin derechos de autor) o un tema propio de `brand/music/`.
 - Cierre de 3 s con el logo, esquineros naranjas y `SOMOSDER.AR`.
+
+### Editar un reel ya generado
+
+Debajo del reel aparece **Editar reel**:
+- **Recortar**: cada video tiene dos barras (inicio y fin). Tocando la miniatura se ve el tramo elegido en bucle.
+- **Fotos**: cuántos segundos dura cada una (1 a 15).
+- **Orden**: subir / bajar; **Quitar** saca el clip.
+- **Transiciones**: entre cada clip se elige la transición (fundido, deslizar, cortina, círculo, zoom, corte seco…) y su duración.
+- **Título, música y logo**: se pueden cambiar; "Otra canción" genera una melodía nueva del mismo estilo.
+- **Aplicar cambios** vuelve a armar el reel (versión 1, 2, 3…). Los clips que no cambiaron se reutilizan, así que tarda menos.
+
+Los archivos originales quedan en `salidas/<lote>/fuentes`, así que un reel se puede volver a editar mientras esté esa carpeta.
 
 ## Estructura
 

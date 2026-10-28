@@ -16,6 +16,7 @@ from pathlib import Path
 import hmac
 import json
 import secrets
+import shutil
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
@@ -137,7 +138,8 @@ def _zip(files: list[Path], dest: Path) -> Path:
 
 @app.get("/")
 def index():
-    return render_template("index.html", templates=graphics.TEMPLATES, music_styles=list(reels.music.STYLES))
+    return render_template("index.html", templates=graphics.TEMPLATES, music_styles=list(reels.music.STYLES),
+                           transitions=reels.TRANSITIONS, template_hints=graphics.TEMPLATE_HINTS)
 
 
 @app.get("/api/estado")
@@ -171,15 +173,51 @@ def api_graficos():
         return jsonify(error=str(e)), 400
 
 
-def _run_reel(job_id: str, inputs: list[Path], opts: reels.ReelOptions, out: Path):
+def _reel_info(lote: Path, project: dict) -> dict:
+    """Proyecto + direcciones de miniaturas y vistas previas, para el editor del navegador."""
+    clips = []
+    for c in project["clips"]:
+        stem = Path(c["src"]).stem
+        clips.append({**c, "miniatura": _url(lote / "miniaturas" / f"{stem}.jpg"),
+                      "vista": _url(lote / "vistas" / f"{stem}.mp4") if c["kind"] == "video" else None})
+    return {**project, "lote": lote.name, "clips": clips}
+
+
+def _prepare_previews(lote: Path, project: dict) -> None:
+    (lote / "miniaturas").mkdir(exist_ok=True)
+    (lote / "vistas").mkdir(exist_ok=True)
+    for c in project["clips"]:
+        src, stem = lote / "fuentes" / c["src"], Path(c["src"]).stem
+        thumb = lote / "miniaturas" / f"{stem}.jpg"
+        if not thumb.exists():
+            reels.thumbnail(src, thumb, (c["start"] + c["end"]) / 2)
+        view = lote / "vistas" / f"{stem}.mp4"
+        if c["kind"] == "video" and not view.exists():
+            reels.preview_proxy(src, view)
+
+
+def _run_reel(job_id: str, lote: Path, project: dict, out: Path, previews: bool = False):
     job = JOBS[job_id]
     try:
-        reels.generate(inputs, out, opts)
-        job.update(estado="listo", archivo=_url(out))
+        reels.render_project(project, lote, out)
+        (lote / "proyecto.json").write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+        if previews:
+            _prepare_previews(lote, project)
+        job.update(estado="listo", archivo=_url(out), proyecto=_reel_info(lote, project),
+                   transiciones=reels.TRANSITIONS)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         job.update(estado="error", error=str(e))
     job["fin"] = time.time()
+
+
+def _start_reel(lote: Path, project: dict, n: int, previews: bool) -> str:
+    version = project.get("version", 0)
+    out = lote / f"DER-reel{'-v' + str(version) if version else ''}-{datetime.now():%H%M%S}.mp4"
+    job_id = uuid.uuid4().hex[:12]
+    JOBS[job_id] = {"estado": "procesando", "inicio": time.time(), "n": n}
+    threading.Thread(target=_run_reel, args=(job_id, lote, project, out, previews), daemon=True).start()
+    return job_id
 
 
 @app.post("/api/reel")
@@ -193,24 +231,62 @@ def api_reel():
         subtitle=f.get("subtitulo", "").strip(),
         max_clip_seconds=float(f.get("max_clip") or 0),
         photo_seconds=float(f.get("seg_foto") or 3),
-        transition=f.get("transicion", "fade"),
+        transition=f.get("transicion", "fade") if f.get("transicion") in reels.TRANSITIONS else "fade",
         music=f.get("musica", "auto:energico"),
         music_volume=float(f.get("volumen") or 0.9),
         keep_original_audio=f.get("audio_original") == "1",
         watermark=f.get("marca_agua", "1") == "1",
         logo=f.get("logo", "auto"),
     )
-    out = _job_dir("reel") / f"DER-reel-{datetime.now():%H%M%S}.mp4"
-    job_id = uuid.uuid4().hex[:12]
-    JOBS[job_id] = {"estado": "procesando", "inicio": time.time(), "n": len(inputs)}
-    threading.Thread(target=_run_reel, args=(job_id, inputs, opts, out), daemon=True).start()
-    return jsonify(job=job_id)
+    lote = _job_dir("reel")
+    fuentes = lote / "fuentes"
+    fuentes.mkdir()
+    srcs = []
+    for i, p in enumerate(inputs):
+        # se mueven (no se copian) al lote: así el reel se puede volver a editar después
+        dst = fuentes / f"{i:02d}_{p.name}"
+        shutil.move(str(p), dst)
+        srcs.append(dst)
+    try:
+        project = reels.build_project(srcs, opts)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=str(e)), 400
+    return jsonify(job=_start_reel(lote, project, len(srcs), previews=True))
 
 
 @app.get("/api/reel/<job_id>")
 def api_reel_estado(job_id):
     job = JOBS.get(job_id) or abort(404)
     return jsonify(job)
+
+
+@app.get("/api/reel/proyecto/<lote>")
+def api_reel_proyecto(lote):
+    d = _lote(lote)
+    p = d / "proyecto.json"
+    if not p.exists():
+        abort(404)
+    _prepare_previews(d, json.loads(p.read_text(encoding="utf-8")))
+    return jsonify(proyecto=_reel_info(d, json.loads(p.read_text(encoding="utf-8"))),
+                   transiciones=reels.TRANSITIONS)
+
+
+@app.post("/api/reel/editar")
+def api_reel_editar():
+    """Vuelve a renderizar un reel con los cambios del editor (recortes, orden, transiciones…)."""
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    if not (d / "fuentes").is_dir():
+        return jsonify(error="Este reel no se puede editar (se generó con una versión anterior)."), 400
+    try:
+        project = reels.clean_project(data.get("proyecto") or {}, d / "fuentes")
+    except (ValueError, TypeError) as e:
+        return jsonify(error=str(e)), 400
+    prev = json.loads((d / "proyecto.json").read_text(encoding="utf-8")) if (d / "proyecto.json").exists() else {}
+    project["version"] = int(prev.get("version", 0)) + 1
+    if any(j.get("estado") == "procesando" for j in JOBS.values()):
+        return jsonify(error="Ya hay un reel procesándose. Esperá a que termine y probá de nuevo."), 409
+    return jsonify(job=_start_reel(d, project, len(project["clips"]), previews=False))
 
 
 @app.post("/api/brand")
