@@ -177,3 +177,11 @@ body.rx-abierto { overflow: hidden; }
 .rx-li small { color: #9a9a9a; flex: 0 0 auto; }
 .rx-ta { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #444; background: #151515; color: #f0f0f0; font: 16px "DER Cuerpo", sans-serif; resize: vertical; }
 .rx-tlw { max-height: 38vh; overflow-y: auto; }
+
+/* estado de la vista previa */
+.rx-badge.pend { color: #fff; background: rgba(255,92,0,.92); border-left-color: #fff; display: inline-flex; align-items: center; gap: 8px; }
+.rx-spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; animation: rx-giro .8s linear infinite; }
+@keyframes rx-giro { to { transform: rotate(360deg); } }
+.rx-prim.pulso { box-shadow: 0 0 0 3px rgba(255,92,0,.35); }
+.rx-top { flex-wrap: wrap; }
+@media (min-width: 900px) { .rx:not(.con-panel) { grid-template-columns: minmax(0, 1fr) !important; } }

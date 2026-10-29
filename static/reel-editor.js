@@ -137,11 +137,56 @@ const ReelEditor = (() => {
       fut.length = 0; last = s;
       keepDraft();
       paint();
+      programarPrevia();
+    }
+
+    // --- vista previa automática: el video de arriba siempre muestra lo último que editaste ---
+    let rendered = snap(), autoT = null, autoBusy = false, exported = snap();
+    function estadoCambios() {
+      const b = $(".rx-badge"), now = snap();
+      if (autoBusy) { b.innerHTML = `<i class="rx-spin"></i>Actualizando la vista previa…`; b.classList.add("pend"); return; }
+      if (now !== rendered) { b.textContent = "Cambios sin ver · se actualiza solo"; b.classList.add("pend"); return; }
+      b.classList.remove("pend");
+      b.textContent = now === exported ? `Versión ${saved.version || 0}` : "Vista previa · falta Exportar para descargar";
+      $("[data-x=exportar]").classList.toggle("pulso", now !== exported);
+    }
+    function programarPrevia() {
+      estadoCambios();
+      clearTimeout(autoT);
+      autoT = setTimeout(autoPrevia, 2500);
+    }
+    async function autoPrevia() {
+      if (busy || autoBusy) { autoT = setTimeout(autoPrevia, 2000); return; }
+      const want = snap();
+      if (want === rendered) return estadoCambios();
+      autoBusy = true; estadoCambios();
+      try {
+        const r = await fetch("/api/reel/editar", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lote, proyecto: JSON.parse(want), vista_previa: true }) });
+        const j = await r.json();
+        if (r.status === 409) { autoBusy = false; autoT = setTimeout(autoPrevia, 3000); return; }
+        if (!r.ok) throw new Error(j.error);
+        let st;
+        do {
+          await new Promise(ok => setTimeout(ok, 1200));
+          try { st = await (await fetch("/api/trabajo/" + j.job)).json(); } catch (_) { st = { estado: "procesando" }; }
+        } while (st.estado === "procesando");
+        if (st.estado === "error") throw new Error(st.error);
+        const t = video.currentTime || 0, playing = !video.paused;
+        archivo = st.archivo; video.src = archivo; video.load();
+        video.addEventListener("loadedmetadata", () => { video.currentTime = Math.min(t, video.duration - 0.05); if (playing) video.play().catch(() => {}); overlay(); }, { once: true });
+        rendered = want;
+      } catch (err) { toast("No se pudo actualizar la vista previa: " + String(err.message || err).slice(0, 200)); rendered = want; }
+      finally {
+        autoBusy = false; estadoCambios();
+        if (snap() !== rendered) programarPrevia();
+      }
     }
     function undo() { if (!hist.length) return; fut.push(last); last = hist.pop(); p = JSON.parse(last); afterHistory(); }
     function redo() { if (!fut.length) return; hist.push(last); last = fut.pop(); p = JSON.parse(last); afterHistory(); }
     function afterHistory() {
       keepDraft();
+      programarPrevia();
       if (sel >= p.clips.length) sel = -1;
       if (trans >= p.clips.length - 1) trans = -1;
       p.textos = p.textos || []; p.stickers = p.stickers || [];
@@ -879,6 +924,9 @@ const ReelEditor = (() => {
 
     async function render(preview) {
       if (busy) return;
+      clearTimeout(autoT);
+      if (autoBusy) { toast(preview ? "Ya se está actualizando la vista previa." : "Esperá unos segundos: termina la vista previa y exporta."); if (!preview) setTimeout(() => render(false), 2500); return; }
+      const want = snap();
       busyOn(preview ? "Armando la vista previa…" : "Exportando en alta calidad… podés salir de la app: te aviso al terminar.");
       try {
         const r = await fetch("/api/reel/editar", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -895,12 +943,15 @@ const ReelEditor = (() => {
         } while (s.estado === "procesando");
         if (s.estado === "error") throw new Error(s.error);
         archivo = s.archivo; video.src = archivo; video.load(); video.play().catch(() => {});
+        rendered = want;
         if (preview) {
-          $(".rx-badge").textContent = "Vista previa · baja calidad";
+          estadoCambios();
         } else {
           saved = clone(s.proyecto); p = clone(s.proyecto); p.textos = p.textos || []; p.stickers = p.stickers || [];
           last = snap(); hist.length = 0; fut.length = 0;
           localStorage.removeItem(KEY);
+          rendered = exported = snap();
+          estadoCambios();
           $(".rx-badge").textContent = `Versión ${saved.version} · lista para descargar`;
           toast("Listo. Ya podés descargarla desde la pantalla anterior (✕).");
           if (cardBox) open(cardBox, { ...s, ...cat }, opts);
@@ -929,6 +980,7 @@ const ReelEditor = (() => {
     }
 
     paint();
+    if (recuperado) { exported = ""; programarPrevia(); }
     if (recuperado) toast("Recuperé los cambios que no habías exportado.");
     else if (info.borrador) toast("Seguís desde tu última vista previa.");
   }
