@@ -120,15 +120,21 @@ Pestaña **Carrusel**: subís fotos y videos en el orden en que van (hasta 20).
 - Los videos salen en 4:5 o 1:1, con el logo chico arriba y su audio original; los horizontales van sobre el mismo video desenfocado. Máximo de segundos configurable (Instagram admite hasta 60).
 - **Descargar todo** baja un .zip numerado (`DER-carrusel-01`, `-02`…); **Compartir todo** lo manda directo desde el celular si el sistema lo permite.
 
-### Editar un reel ya generado
+### Editor de reels (estilo CapCut)
 
-Debajo del reel aparece **Editar reel**:
-- **Recortar**: cada video tiene dos barras (inicio y fin). Tocando la miniatura se ve el tramo elegido en bucle.
-- **Fotos**: cuántos segundos dura cada una (1 a 15).
-- **Orden**: subir / bajar; **Quitar** saca el clip.
-- **Transiciones**: entre cada clip se elige la transición (fundido, deslizar, cortina, círculo, zoom, corte seco…) y su duración.
-- **Título, música y logo**: se pueden cambiar; "Otra canción" genera una melodía nueva del mismo estilo.
-- **Aplicar cambios** vuelve a armar el reel (versión 1, 2, 3…). Los clips que no cambiaron se reutilizan, así que tarda menos.
+Debajo del reel, **Editar reel** abre el editor a pantalla completa:
+- **Línea de tiempo** con la tira de cuadros de cada clip. Tocá un clip para elegirlo; arrastrá sus bordes blancos para recortar;
+  mantenelo apretado y arrastralo para cambiarlo de lugar. Entre clip y clip, el cuadradito es la **transición** (16, con duración).
+- Con un clip elegido: **Recortar, Dividir, Velocidad** (0,25x a 4x), **Volumen** (sonido original), **Encuadre** (llenar o
+  ajustar con fondo desenfocado o de color, zoom y posición), **Filtros** (11), **Ajustes** (brillo, contraste, saturación,
+  temperatura, viñeta), **Animación** (acercar, alejar, paneo, latido, sacudida), **Girar y espejar**, **Congelar** un cuadro,
+  **Invertir** (hasta 6 s), **Duplicar, Mover, Borrar**.
+- Sin clip elegido: **Agregar** más videos o fotos, **Formato** (9:16, 4:5, 1:1), **Música** (volumen, desde qué segundo,
+  fundido, otra canción), **Voz en off** (grabada desde el celular o subida, baja la música al hablar), **Título**,
+  **Logo y cierre**, **Filtro a todo**.
+- **Deshacer / Rehacer** sin límite práctico. Los cambios se guardan solos en el celular aunque cierres la app.
+- **Vista previa**: versión liviana en segundos para revisar. **Exportar**: versión final en alta (versión 1, 2, 3…);
+  sigue en el servidor aunque salgas, y avisa al terminar. Los clips que no cambiaron se reutilizan.
 
 Los archivos originales quedan en `salidas/<lote>/fuentes`, así que un reel se puede volver a editar mientras esté esa carpeta.
 

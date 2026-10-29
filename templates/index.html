@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="DER Studio">
 <link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/static/reel-editor.css">
 <link rel="apple-touch-icon" href="/icono-180.png">
 <link rel="icon" href="/icono-192.png">
 <style>
@@ -158,64 +159,6 @@
     .row { grid-template-columns: 1fr; gap: 0; }
     input[type=text], textarea, select, input[type=number] { font-size: 16px; } /* evita el zoom de iOS */
   }
-  /* editor de reels: sala de control oscura, esquineros de marca, tiempos en Netron */
-  .re { margin-top: 22px; background: #262626; color: var(--claro); border-radius: var(--radio); padding: 18px 16px 16px; position: relative; }
-  .re::before, .re::after { content: ""; position: absolute; width: 22px; height: 22px; border: 0 solid var(--naranja); }
-  .re::before { top: 8px; left: 8px; border-top-width: 4px; border-left-width: 4px; }
-  .re::after { bottom: 8px; right: 8px; border-bottom-width: 4px; border-right-width: 4px; }
-  .re-head { display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 0 6px; }
-  .re-head h3 { font: 17px "DER Titulo", sans-serif; text-transform: uppercase; letter-spacing: .04em; margin: 0; }
-  .re-total { text-align: right; line-height: 1; }
-  .re-total small { display: block; font: 11px "DER Sub", sans-serif; color: #9a9a9a; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
-  .re-total b { font: 26px "DER Titulo", sans-serif; color: var(--naranja); font-variant-numeric: tabular-nums; }
-  .re-hint { font-size: 13px; color: #a8a8a8; margin: 8px 6px 14px; }
-  .re-tl { list-style: none; margin: 0; padding: 0; }
-  .re-clip { display: grid; grid-template-columns: 76px 1fr; gap: 12px; background: #313131; border-radius: 10px; padding: 10px; border-left: 3px solid var(--naranja); }
-  .re-thumb { position: relative; width: 76px; aspect-ratio: 9/16; padding: 0; border: 0; border-radius: 6px; overflow: hidden; background: #1b1b1b; cursor: pointer; align-self: start; }
-  .re-thumb img, .re-thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .re-thumb.on { outline: 2px solid var(--naranja); }
-  .re-n { position: absolute; top: 4px; left: 4px; font: 12px "DER Titulo", sans-serif; background: var(--naranja); color: #fff; padding: 2px 5px; border-radius: 3px; z-index: 1; }
-  .re-play { position: absolute; inset: auto 4px 4px auto; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; display: grid; place-items: center; z-index: 1; }
-  .re-thumb.on .re-play { display: none; }
-  .re-body { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
-  .re-name { font: 13px "DER Sub", sans-serif; color: #d0d0d0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .re-trim { position: relative; padding-top: 6px; }
-  .re-track { position: relative; height: 34px; border-radius: 6px; background: repeating-linear-gradient(90deg, #3d3d3d 0 10px, #363636 10px 20px); }
-  .re-sel { position: absolute; top: 0; bottom: 0; background: rgba(255, 92, 0, .32); border: 2px solid var(--naranja); border-radius: 6px; }
-  .re-trim input[type=range] { position: absolute; left: 0; right: 0; top: 6px; width: 100%; height: 34px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
-  .re-trim.foto input[type=range] { position: static; pointer-events: auto; height: 34px; accent-color: var(--naranja); }
-  .re-trim input[type=range]::-webkit-slider-runnable-track { background: none; height: 34px; }
-  .re-trim input[type=range]::-moz-range-track { background: none; }
-  .re-trim input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 18px; height: 34px; border-radius: 4px; background: #fff; border: 3px solid var(--naranja); cursor: ew-resize; }
-  .re-trim input[type=range]::-moz-range-thumb { pointer-events: auto; width: 14px; height: 30px; border-radius: 4px; background: #fff; border: 3px solid var(--naranja); cursor: ew-resize; }
-  .re-trim.foto input[type=range]::-webkit-slider-runnable-track { background: #3d3d3d; height: 8px; border-radius: 4px; }
-  .re-trim.foto input[type=range]::-webkit-slider-thumb { width: 24px; height: 24px; border-radius: 50%; margin-top: -8px; }
-  .re-read { display: flex; justify-content: space-between; font-size: 12px; color: #a8a8a8; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .re-read b { font: 14px "DER Titulo", sans-serif; color: #fff; }
-  .re-tools { display: flex; gap: 6px; }
-  .re-tools button { flex: 0 0 auto; min-width: 38px; height: 34px; border: 1px solid #4a4a4a; background: transparent; color: var(--claro); border-radius: 7px; font: 14px "DER Sub", sans-serif; cursor: pointer; }
-  .re-tools button:hover:not(:disabled) { border-color: var(--naranja); }
-  .re-tools button:disabled { opacity: .3; cursor: default; }
-  .re-tools .re-del { margin-left: auto; padding: 0 12px; color: #ff9b85; }
-  .re-tr { display: flex; align-items: center; gap: 8px; padding: 8px 0 8px 28px; position: relative; }
-  .re-tr::before { content: ""; position: absolute; left: 47px; top: 0; bottom: 0; border-left: 2px dashed #555; }
-  .re-node { width: 14px; height: 14px; background: var(--naranja); transform: rotate(45deg); flex: 0 0 auto; position: relative; margin-left: 12px; margin-right: 14px; }
-  .re-tr select { background: #1f1f1f; color: var(--claro); border: 1px solid #4a4a4a; border-radius: 8px; padding: 8px 10px; font: 14px "DER Sub", sans-serif; }
-  .re-tr select[data-t=name] { flex: 1; min-width: 0; }
-  .re-tr select[data-t=secs] { width: 82px; }
-  .re-tr select:disabled { opacity: .35; }
-  .re-more { margin-top: 14px; border-top: 1px solid #3c3c3c; padding: 10px 4px 0; }
-  .re-more summary { cursor: pointer; font: 14px "DER Sub", sans-serif; color: var(--claro); padding: 6px 0; }
-  .re-more label { color: #d0d0d0; }
-  .re-more input[type=text], .re-more input[type=number], .re-more select { background: #1f1f1f; color: var(--claro); border-color: #4a4a4a; }
-  .re-foot { display: flex; gap: 10px; margin-top: 16px; }
-  .re-foot button { padding: 13px 14px; border-radius: 8px; border: 0; cursor: pointer; font: 15px "DER Titulo", sans-serif; text-transform: uppercase; letter-spacing: .04em; }
-  .re-undo { background: transparent; color: var(--claro); border: 1px solid #4a4a4a !important; }
-  .re-go { flex: 1; background: var(--naranja); color: #fff; }
-  .re-foot button:disabled { opacity: .4; cursor: default; }
-  .re-status { font-size: 13px; color: #cfcfcf; margin: 10px 2px 0; min-height: 1em; }
-  .re-status.err { color: #ffb4a6; white-space: pre-wrap; }
-  @media (max-width: 600px) { .re { margin-left: -6px; margin-right: -6px; padding: 16px 12px 14px; } .re-total b { font-size: 22px; } }
   /* segundo plano, recientes y avisos */
   .segundo-plano { margin: 14px 0 0; padding: 12px 14px; background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; font-size: 14px; }
   .avisos { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--claro); border: 1px solid #555; border-radius: 999px; padding: 7px 14px 7px 10px; font: 13px "DER Sub", sans-serif; cursor: pointer; }
@@ -726,6 +669,7 @@ function mostrarResultado(tipo, box, s) {
   if (tipo === "piezas") return mostrarPiezas(box, s.lote, s.disenos);
   if (tipo === "carrusel") return mostrarCarrusel(box, s.lote, s.diapositivas);
   if (s.proyecto) return ReelEditor.open(box, s, {
+    logos: ESTADO.logos,
     musicas: [...$("#musicaSel").options].map(o => [o.value, o.textContent]),
     compartir: puedeCompartir ? url => compartir(url, url.split("/").pop(), "video/mp4") : null,
   });

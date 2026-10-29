@@ -10,6 +10,7 @@ import time
 import traceback
 import uuid
 import zipfile
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
@@ -28,6 +29,7 @@ OUT_DIR = ROOT / "salidas"
 UPLOAD_DIR = ROOT / ".subidas"
 
 app = Flask(__name__)
+app.json.sort_keys = False  # el orden de los catálogos (transiciones, filtros) importa
 app.config["MAX_CONTENT_LENGTH"] = 4 * 1024**3  # 4 GB, para videos largos
 
 # --- Acceso con contraseña (solo si se define DER_PASSWORD, p. ej. en el servidor) ---
@@ -74,7 +76,7 @@ def login():
 
 JOBS: dict[str, dict] = {}
 JOBS_DIR = OUT_DIR / ".trabajos"
-TIPO_NOMBRE = {"reel": "Tu reel", "carrusel": "Tu carrusel", "piezas": "Tus piezas"}
+TIPO_NOMBRE = {"vista": "La vista previa", "reel": "Tu reel", "carrusel": "Tu carrusel", "piezas": "Tus piezas"}
 
 
 def _job_new(tipo: str, lote: Path, extra: dict | None = None) -> str:
@@ -97,7 +99,7 @@ def _job_set(job_id: str, **kw) -> None:
     if kw.get("estado") in ("listo", "error"):
         JOBS[job_id]["fin"] = time.time()
     _job_save(job_id)
-    if kw.get("estado") in ("listo", "error"):
+    if kw.get("estado") in ("listo", "error") and JOBS[job_id].get("tipo") != "vista":
         job = JOBS[job_id]
         nombre = TIPO_NOMBRE.get(job["tipo"], "Tu trabajo")
         ok = kw["estado"] == "listo"
@@ -266,46 +268,71 @@ def _run_graficos(job_id, template, formats, photos, content, out, first_only):
 
 
 def _reel_info(lote: Path, project: dict) -> dict:
-    """Proyecto + direcciones de miniaturas y vistas previas, para el editor del navegador."""
+    """Proyecto + miniaturas, tiras de cuadros y vistas previas, para el editor del navegador."""
     clips = []
     for c in project["clips"]:
         stem = Path(c["src"]).stem
         clips.append({**c, "miniatura": _url(lote / "miniaturas" / f"{stem}.jpg"),
+                      "tira": _url(lote / "miniaturas" / f"{stem}.tira.jpg"),
                       "vista": _url(lote / "vistas" / f"{stem}.mp4") if c["kind"] == "video" else None})
-    return {**project, "lote": lote.name, "clips": clips}
+    voz = project["opciones"].get("voz")
+    return {**project, "lote": lote.name, "clips": clips,
+            "voz_url": _url(lote / "fuentes" / voz) if voz and (lote / "fuentes" / voz).is_file() else None}
+
+
+REEL_CATALOGO = {"transiciones": reels.TRANSITIONS, "filtros": {k: v[0] for k, v in reels.FILTERS.items()},
+                 "animaciones": reels.ANIMATIONS}
 
 
 def _prepare_previews(lote: Path, project: dict) -> None:
     (lote / "miniaturas").mkdir(exist_ok=True)
     (lote / "vistas").mkdir(exist_ok=True)
+    done = set()
     for c in project["clips"]:
+        if c["src"] in done:
+            continue
+        done.add(c["src"])
         src, stem = lote / "fuentes" / c["src"], Path(c["src"]).stem
         thumb = lote / "miniaturas" / f"{stem}.jpg"
         if not thumb.exists():
             reels.thumbnail(src, thumb, (c["start"] + c["end"]) / 2)
+        strip = lote / "miniaturas" / f"{stem}.tira.jpg"
+        if not strip.exists():
+            reels.filmstrip(src, strip, c["source_duration"], 10)
         view = lote / "vistas" / f"{stem}.mp4"
         if c["kind"] == "video" and not view.exists():
             reels.preview_proxy(src, view)
 
 
-def _run_reel(job_id: str, lote: Path, project: dict, out: Path, previews: bool = False):
+def _run_reel(job_id: str, lote: Path, project: dict, out: Path, previews: bool = False, preview: bool = False):
     try:
-        reels.render_project(project, lote, out)
-        (lote / "proyecto.json").write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
         if previews:
+            _job_set(job_id, progreso="Preparando miniaturas")
             _prepare_previews(lote, project)
-        _job_set(job_id, estado="listo", archivo=_url(out), proyecto=_reel_info(lote, project),
-                 transiciones=reels.TRANSITIONS)
+        reels.render_project(project, lote, out, preview=preview, progress=lambda t: _job_set(job_id, progreso=t))
+        if preview:
+            for old in lote.glob("vista-previa-*.mp4"):
+                if old != out:
+                    old.unlink(missing_ok=True)
+            (lote / "borrador.json").write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+        else:
+            (lote / "proyecto.json").write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+            (lote / "borrador.json").unlink(missing_ok=True)
+        _job_set(job_id, estado="listo", archivo=_url(out), vista_previa=preview,
+                 proyecto=_reel_info(lote, project), **REEL_CATALOGO)
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         _job_set(job_id, estado="error", error=str(e))
 
 
-def _start_reel(lote: Path, project: dict, n: int, previews: bool) -> str:
+def _start_reel(lote: Path, project: dict, n: int, previews: bool, preview: bool = False) -> str:
     version = project.get("version", 0)
-    out = lote / f"DER-reel{'-v' + str(version) if version else ''}-{datetime.now():%H%M%S}.mp4"
-    job_id = _job_new("reel", lote, {"n": n})
-    threading.Thread(target=_run_reel, args=(job_id, lote, project, out, previews), daemon=True).start()
+    if preview:
+        out = lote / f"vista-previa-{datetime.now():%H%M%S}.mp4"
+    else:
+        out = lote / f"DER-reel{'-v' + str(version) if version else ''}-{datetime.now():%H%M%S}.mp4"
+    job_id = _job_new("vista" if preview else "reel", lote, {"n": n})
+    threading.Thread(target=_run_reel, args=(job_id, lote, project, out, previews, preview), daemon=True).start()
     return job_id
 
 
@@ -356,9 +383,9 @@ def api_reel_proyecto(lote):
     p = d / "proyecto.json"
     if not p.exists():
         abort(404)
-    _prepare_previews(d, json.loads(p.read_text(encoding="utf-8")))
-    return jsonify(proyecto=_reel_info(d, json.loads(p.read_text(encoding="utf-8"))),
-                   transiciones=reels.TRANSITIONS)
+    project = json.loads(p.read_text(encoding="utf-8"))
+    _prepare_previews(d, project)
+    return jsonify(proyecto=_reel_info(d, project), **REEL_CATALOGO)
 
 
 @app.post("/api/reel/editar")
@@ -373,10 +400,90 @@ def api_reel_editar():
     except (ValueError, TypeError) as e:
         return jsonify(error=str(e)), 400
     prev = json.loads((d / "proyecto.json").read_text(encoding="utf-8")) if (d / "proyecto.json").exists() else {}
-    project["version"] = int(prev.get("version", 0)) + 1
-    if any(j.get("estado") == "procesando" and j.get("tipo") == "reel" for j in JOBS.values()):
+    preview = bool(data.get("vista_previa"))
+    project["version"] = int(prev.get("version", 0)) + (0 if preview else 1)
+    if any(j.get("estado") == "procesando" and j.get("tipo") in ("reel", "vista") for j in JOBS.values()):
         return jsonify(error="Ya hay un reel procesándose. Esperá a que termine y probá de nuevo."), 409
-    return jsonify(job=_start_reel(d, project, len(project["clips"]), previews=False))
+    _prepare_previews(d, project)
+    return jsonify(job=_start_reel(d, project, len(project["clips"]), previews=False, preview=preview))
+
+
+def _reel_lote(data: dict) -> Path:
+    d = _lote(str(data.get("lote", "")))
+    if not (d / "fuentes").is_dir():
+        abort(400)
+    return d
+
+
+def _mover_a_fuentes(d: Path, refs: list[str], prefijo: str = "") -> list[Path]:
+    fuentes = d / "fuentes"
+    n = len(list(fuentes.iterdir()))
+    out = []
+    for k, ref in enumerate(refs):
+        up_id, _, name = str(ref).partition("/")
+        p = UPLOAD_DIR / "partes" / secure_filename(up_id) / secure_filename(name)
+        if not p.is_file():
+            continue
+        dst = fuentes / f"{prefijo}{n + k:02d}_{secure_filename(name)}"
+        shutil.move(str(p), dst)
+        out.append(dst)
+    return out
+
+
+@app.post("/api/reel/agregar")
+def api_reel_agregar():
+    """Suma videos o fotos a un reel que ya existe (botón Agregar del editor)."""
+    data = request.get_json(silent=True) or {}
+    d = _reel_lote(data)
+    try:
+        srcs = _mover_a_fuentes(d, data.get("refs") or [])
+        if not srcs:
+            return jsonify(error="No llegaron los archivos."), 400
+        clips = [asdict(reels.clip_from_file(p)) for p in srcs]
+        info = {"clips": clips, "opciones": {}}
+        _prepare_previews(d, info)
+        return jsonify(clips=_reel_info(d, {**info, "opciones": {}})["clips"])
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+
+
+@app.post("/api/reel/cuadro")
+def api_reel_cuadro():
+    """Congelar imagen: saca el cuadro de ese segundo y lo devuelve como un clip de foto."""
+    data = request.get_json(silent=True) or {}
+    d = _reel_lote(data)
+    src = d / "fuentes" / Path(str(data.get("src", ""))).name
+    if not src.is_file() or src.suffix.lower() in reels.IMAGE_EXT:
+        return jsonify(error="Solo se puede congelar un cuadro de un video."), 400
+    t = max(0.0, float(data.get("t") or 0))
+    dst = d / "fuentes" / f"{src.stem}_cuadro{int(t * 1000):06d}.jpg"
+    try:
+        if not dst.exists():
+            reels.extract_frame(src, dst, t)
+        clip = reels.clip_from_file(dst, reels.ReelOptions(photo_seconds=2.0, transition="none"))
+        clip.anim = "ninguna"
+        info = {"clips": [asdict(clip)], "opciones": {}}
+        _prepare_previews(d, info)
+        return jsonify(clip=_reel_info(d, info)["clips"][0])
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+
+
+@app.post("/api/reel/voz")
+def api_reel_voz():
+    """Voz en off grabada desde el celular (o un audio subido)."""
+    data = request.get_json(silent=True) or {}
+    d = _reel_lote(data)
+    srcs = _mover_a_fuentes(d, [data.get("ref", "")], prefijo="voz_")
+    if not srcs:
+        return jsonify(error="No llegó el audio."), 400
+    dur = reels.probe(srcs[0])["duration"]
+    if dur <= 0:
+        srcs[0].unlink(missing_ok=True)
+        return jsonify(error="No pude leer ese audio."), 400
+    return jsonify(voz=srcs[0].name, segundos=round(dur, 1), url=_url(srcs[0]))
 
 
 def _run_carrusel(job_id: str, inputs: list[Path], out: Path, form: dict):
@@ -476,7 +583,13 @@ def api_lote(lote):
         if (d / "proyecto.json").exists():
             project = json.loads((d / "proyecto.json").read_text(encoding="utf-8"))
             _prepare_previews(d, project)
-            info.update(proyecto=_reel_info(d, project), transiciones=reels.TRANSITIONS)
+            # si quedó un borrador (vista previa sin exportar), se retoma desde ahí
+            borrador = d / "borrador.json"
+            if borrador.exists() and borrador.stat().st_mtime > (d / "proyecto.json").stat().st_mtime:
+                project = json.loads(borrador.read_text(encoding="utf-8"))
+                info["borrador"] = True
+            _prepare_previews(d, project)
+            info.update(proyecto=_reel_info(d, project), **REEL_CATALOGO)
         return jsonify(info)
     designs = []
     for j in sorted(d.glob("DER-*.json")):
