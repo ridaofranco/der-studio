@@ -141,3 +141,39 @@ body.rx-abierto { overflow: hidden; }
   .rx-meta, .rx-tlw, .rx-tools { grid-column: 1; }
   .rx-sheet { grid-column: 2; grid-row: 2 / span 4; max-height: none; border-top: 0; border-left: 1px solid #333; }
 }
+
+/* pistas de textos y stickers (debajo de los clips) */
+.rx-lanes { position: relative; padding: 0 0 0 0; }
+.rx-lane { position: relative; height: 30px; margin-top: 6px; }
+.rx-bar-t, .rx-bar-s { position: absolute; top: 0; height: 26px; border-radius: 6px; display: flex; align-items: center; padding: 0 8px;
+  font: 11.5px "DER Sub", sans-serif; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; overflow: visible; }
+.rx-bar-t { background: #3a2a20; color: #ffd0b3; box-shadow: inset 0 0 0 1px rgba(255,92,0,.55); }
+.rx-bar-s { background: #2b2f36; color: #cfd6e0; box-shadow: inset 0 0 0 1px rgba(160,180,210,.4); }
+.rx-bar-t span, .rx-bar-s span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.rx-bar-t.on, .rx-bar-s.on { box-shadow: 0 0 0 2px #fff; z-index: 2; }
+.rx-bar-t .rx-h, .rx-bar-s .rx-h { width: 12px; top: -2px; bottom: -2px; }
+.rx-bar-t .rx-h.l, .rx-bar-s .rx-h.l { left: -7px; }
+.rx-bar-t .rx-h.r, .rx-bar-s .rx-h.r { right: -7px; }
+
+/* capa sobre el video para ubicar el texto o sticker */
+.rx-ov { position: absolute; z-index: 4; outline: 1px dashed rgba(255,255,255,.35); pointer-events: none; }
+.rx-ov-it { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: move; touch-action: none; line-height: 1.18;
+  white-space: pre-wrap; outline: 2px solid var(--naranja); outline-offset: 4px; user-select: none; -webkit-user-select: none; }
+.rx-ov-st { display: grid; place-items: center; background: rgba(255,92,0,.15); border-radius: 6px; }
+.rx-ov-st span { font: 11px "DER Sub", sans-serif; color: #fff; background: rgba(0,0,0,.6); padding: 2px 6px; border-radius: 4px; }
+.rx-ov-tip { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); margin: 0; font-size: 11px; color: #fff;
+  background: rgba(0,0,0,.6); padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+
+/* textos: presets y lista */
+.rx-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.rx-preset { min-height: 56px; border-radius: 10px; border: 1px solid #444; background: #2a2a2a; cursor: pointer; padding: 8px; display: grid; place-items: center; text-align: center; }
+.rx-preset b { font-weight: normal; font-size: 13px; }
+.rx-p-titulo b { font: 15px "DER Titulo", sans-serif; text-transform: uppercase; }
+.rx-p-etiqueta b { background: var(--naranja); color: #fff; padding: 3px 8px; border-radius: 5px; }
+.rx-p-cta b { background: #111; padding: 4px 9px; border-radius: 5px; }
+.rx-p-escribir b::after { content: "|"; color: var(--naranja); margin-left: 2px; }
+.rx-li { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 8px; border: 1px solid #3a3a3a; background: #262626; cursor: pointer; text-align: left; }
+.rx-li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rx-li small { color: #9a9a9a; flex: 0 0 auto; }
+.rx-ta { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid #444; background: #151515; color: #f0f0f0; font: 16px "DER Cuerpo", sans-serif; resize: vertical; }
+.rx-tlw { max-height: 38vh; overflow-y: auto; }

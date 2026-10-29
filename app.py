@@ -281,7 +281,7 @@ def _reel_info(lote: Path, project: dict) -> dict:
 
 
 REEL_CATALOGO = {"transiciones": reels.TRANSITIONS, "filtros": {k: v[0] for k, v in reels.FILTERS.items()},
-                 "animaciones": reels.ANIMATIONS}
+                 "animaciones": reels.ANIMATIONS, "anim_texto": reels.TEXT_ANIMS, "stickers": reels.STICKERS}
 
 
 def _prepare_previews(lote: Path, project: dict) -> None:
@@ -469,6 +469,22 @@ def api_reel_cuadro():
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify(error=str(e)), 400
+
+
+@app.post("/api/reel/ritmo")
+def api_reel_ritmo():
+    """Pulso de la música elegida, para cortar los clips al ritmo."""
+    data = request.get_json(silent=True) or {}
+    choice = str(data.get("music") or "auto:energico")
+    if choice == "none":
+        return jsonify(error="Elegí una música primero."), 400
+    if choice.startswith("auto"):
+        return jsonify(bpm=reels.music.tempo(choice.split(":", 1)[-1]), primero=0.0)
+    track = brand.MUSIC_DIR / Path(choice).name
+    if not track.is_file():
+        return jsonify(error="No encuentro ese tema."), 404
+    bpm, first = reels.music.detect_beat(track, float(data.get("music_start") or 0), ffmpeg=reels.ffmpeg_exe())
+    return jsonify(bpm=bpm, primero=first)
 
 
 @app.post("/api/reel/voz")

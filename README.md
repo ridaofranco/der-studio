@@ -132,6 +132,12 @@ Debajo del reel, **Editar reel** abre el editor a pantalla completa:
 - Sin clip elegido: **Agregar** más videos o fotos, **Formato** (9:16, 4:5, 1:1), **Música** (volumen, desde qué segundo,
   fundido, otra canción), **Voz en off** (grabada desde el celular o subida, baja la música al hablar), **Título**,
   **Logo y cierre**, **Filtro a todo**.
+- **Texto**: títulos, subtítulos, etiquetas con caja, llamados a la acción o máquina de escribir, cada uno con su
+  momento de entrada y salida, posición (se arrastra sobre el video), tamaño, tipografía, color, caja y animación
+  (aparecer, subir, deslizar, golpe, máquina de escribir). Aparecen en una pista debajo de los clips: se mueven y estiran ahí.
+- **Stickers**: logo (DER o de cliente), marco de esquineros, grilla de puntos, barra naranja, SOMOSDER.AR y flecha.
+- **Al ritmo**: detecta el pulso de la música (la genérica o un tema propio) y ajusta los clips para que cada corte caiga
+  en un golpe (cada 1, 2, 4 u 8 tiempos).
 - **Deshacer / Rehacer** sin límite práctico. Los cambios se guardan solos en el celular aunque cierres la app.
 - **Vista previa**: versión liviana en segundos para revisar. **Exportar**: versión final en alta (versión 1, 2, 3…);
   sigue en el servidor aunque salgas, y avisa al terminar. Los clips que no cambiaron se reutilizan.

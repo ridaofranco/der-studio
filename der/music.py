@@ -149,3 +149,38 @@ def generate(duration: float, out_path: Path, style: str = "energico", seed: int
         w.setframerate(SR)
         w.writeframes((mix * 32767).astype("<i2").tobytes())
     return out_path
+
+
+def tempo(style: str) -> float:
+    """BPM de un estilo de música generada (sus golpes caen en 0, 60/bpm, 2·60/bpm…)."""
+    return float(STYLES.get(style, STYLES["energico"])[0])
+
+
+def detect_beat(path: Path, start: float = 0.0, seconds: float = 60.0, ffmpeg: str = "ffmpeg") -> tuple[float, float]:
+    """Estima el pulso de un tema propio: (bpm, segundo del primer golpe desde `start`).
+
+    Envolvente de energía → autocorrelación entre 70 y 170 BPM → fase con más energía.
+    Alcanza para cortar clips al ritmo; no es un análisis musical fino.
+    """
+    import subprocess
+
+    sr, hop = 11025, 256
+    raw = subprocess.run([ffmpeg, "-v", "error", "-ss", f"{max(0, start):.2f}", "-t", f"{seconds:.1f}", "-i", str(path),
+                          "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True).stdout
+    x = np.frombuffer(raw, dtype=np.float32)
+    if x.size < sr * 4:
+        return 120.0, 0.0
+    n = x.size // hop
+    rms = np.sqrt(np.mean(x[: n * hop].reshape(n, hop) ** 2, axis=1))
+    env = np.maximum(0, np.diff(np.log1p(rms * 100), prepend=0))
+    env -= env.mean()
+    fps = sr / hop
+    ac = np.correlate(env, env, mode="full")[env.size - 1:]
+    lags = np.arange(int(fps * 60 / 170), int(fps * 60 / 70) + 1)
+    # preferencia suave por tempos cercanos a 120 (evita elegir el doble o la mitad)
+    weights = np.exp(-0.5 * (np.log2((60 * fps / lags) / 120) / 0.9) ** 2)
+    best = lags[int(np.argmax(ac[lags] * weights))]
+    bpm = 60 * fps / best
+    phases = [env[p::best].sum() for p in range(best)]
+    first = int(np.argmax(phases)) / fps
+    return round(float(bpm), 1), round(float(first), 3)

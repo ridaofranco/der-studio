@@ -78,13 +78,15 @@ const ReelEditor = (() => {
   // Editor a pantalla completa
   // ---------------------------------------------------------------------------
   function editor(info, opts, cardBox) {
-    const cat = { transiciones: info.transiciones || {}, filtros: info.filtros || {}, animaciones: info.animaciones || {} };
+    const cat = { transiciones: info.transiciones || {}, filtros: info.filtros || {}, animaciones: info.animaciones || {},
+      anim_texto: info.anim_texto || {}, stickers: info.stickers || {} };
     const lote = info.proyecto.lote;
     const KEY = "derReelBorrador:" + lote;
     let saved = clone(info.proyecto);
     let p = clone(info.proyecto);
     p.clips.forEach(c => { c.id = c.id || uid(); });
     let archivo = info.archivo, sel = -1, tool = null, trans = -1, PPS = 46, busy = false;
+    let selT = -1, selS = -1;   // texto o sticker elegido
     const hist = [], fut = [];
 
     // borrador guardado en el celular (cambios sin exportar)
@@ -93,6 +95,7 @@ const ReelEditor = (() => {
     if (draft && draft.p && draft.version === saved.version && JSON.stringify(draft.p) !== JSON.stringify(p)) {
       p = draft.p; recuperado = true;
     }
+    p.textos = p.textos || []; p.stickers = p.stickers || [];
 
     const root = document.createElement("div");
     root.className = "rx";
@@ -107,12 +110,13 @@ const ReelEditor = (() => {
       </div>
       <div class="rx-stage">
         <video playsinline controls preload="metadata"></video>
+        <div class="rx-ov" hidden></div>
         <div class="rx-badge"></div>
         <div class="rx-busy" hidden><div class="rx-bar"><i></i></div><p></p></div>
       </div>
       <div class="rx-meta"><b class="rx-total"></b><span class="rx-n"></span>
         <span class="rx-zoom"><button type="button" data-z="-1" aria-label="Alejar línea de tiempo">−</button><button type="button" data-z="1" aria-label="Acercar línea de tiempo">+</button></span></div>
-      <div class="rx-tlw"><div class="rx-tl"></div></div>
+      <div class="rx-tlw"><div class="rx-tl"></div><div class="rx-lanes"></div></div>
       <div class="rx-sheet" hidden><div class="rx-sheet-h"><b></b><button type="button" class="rx-ok">Listo</button></div><div class="rx-sheet-b"></div></div>
       <nav class="rx-tools"></nav>`;
     document.body.appendChild(root);
@@ -140,8 +144,12 @@ const ReelEditor = (() => {
       keepDraft();
       if (sel >= p.clips.length) sel = -1;
       if (trans >= p.clips.length - 1) trans = -1;
+      p.textos = p.textos || []; p.stickers = p.stickers || [];
+      if (selT >= p.textos.length) selT = -1;
+      if (selS >= p.stickers.length) selS = -1;
       paint();
       if (tool && (sel >= 0 || !CLIP_TOOLS.has(tool))) openTool(tool); else closeTool();
+      overlay();
     }
 
     // --- línea de tiempo -----------------------------------------------------
@@ -171,10 +179,138 @@ const ReelEditor = (() => {
       tl.querySelectorAll(".rx-tr").forEach(b => b.onclick = () => { sel = -1; trans = +b.dataset.t; paint(); openTool("transicion"); });
       tl.querySelector(".rx-add").onclick = () => addClips();
       tl.querySelectorAll(".rx-h").forEach(h => trimHandle(h));
+      lanes();
+      overlay();
       tools();
     }
 
+    // posición en píxeles de un segundo del reel (los clips tienen ancho mínimo y entre ellos va la transición)
+    function timeMap() {
+      const marks = [];
+      let t = 0, x = 16;
+      p.clips.forEach((c, i) => {
+        const d = dur(c), w = Math.max(44, d * PPS);
+        marks.push({ t0: t, t1: t + d, x0: x, x1: x + w });
+        let T = 0;
+        if (i < p.clips.length - 1 && c.transition !== "none") T = Math.min(c.transition_seconds, d / 2, dur(p.clips[i + 1]) / 2);
+        t += d - T; x += w + (i < p.clips.length - 1 ? 28 : 0);
+      });
+      const end = total(p);
+      marks.push({ t0: t, t1: end, x0: x, x1: x + (end - t) * PPS });
+      return marks;
+    }
+    function tx(t, m = timeMap()) {
+      for (const k of m) if (t <= k.t1) return k.x0 + (Math.max(t, k.t0) - k.t0) / Math.max(0.001, k.t1 - k.t0) * (k.x1 - k.x0);
+      const k = m[m.length - 1]; return k.x1;
+    }
+    function xt(x, m = timeMap()) {
+      for (const k of m) if (x <= k.x1) return k.t0 + (Math.max(x, k.x0) - k.x0) / Math.max(1, k.x1 - k.x0) * (k.t1 - k.t0);
+      return total(p);
+    }
+
+    function lanes() {
+      const m = timeMap(), box = $(".rx-lanes");
+      const bar = (it, i, kind) => {
+        const a = tx(it.inicio, m), b = Math.max(a + 30, tx(it.fin, m));
+        const on = (kind === "t" ? selT : selS) === i;
+        const label = kind === "t" ? (it.texto || "Texto").replace(/\*/g, "").slice(0, 40) : (cat.stickers[it.tipo] || it.tipo);
+        return `<div class="rx-bar-${kind}${on ? " on" : ""}" data-${kind}="${i}" style="left:${a}px;width:${b - a}px">
+          <span>${esc(label)}</span>${on ? `<i class="rx-h l" data-bh="l"></i><i class="rx-h r" data-bh="r"></i>` : ""}</div>`;
+      };
+      const w = tx(total(p), m) + 60;
+      box.style.width = w + "px";
+      // renglones: lo que se superpone en el tiempo va en otro renglón (como las pistas de CapCut)
+      const pack = (list, kind) => {
+        const rows = [];
+        list.forEach((it, i) => {
+          let r = rows.findIndex(row => row.every(j => list[j].fin <= it.inicio + 0.01 || list[j].inicio >= it.fin - 0.01));
+          if (r < 0) { rows.push([]); r = rows.length - 1; }
+          rows[r].push(i);
+        });
+        return rows.map(row => `<div class="rx-lane">${row.map(i => bar(list[i], i, kind)).join("")}</div>`).join("");
+      };
+      box.innerHTML = pack(p.textos, "t") + pack(p.stickers, "s");
+      box.querySelectorAll("[data-t],[data-s]").forEach(el => barDrag(el));
+    }
+
+    // arrastrar una barra de texto/sticker: mover en el tiempo o estirar desde los bordes
+    function barDrag(el) {
+      const kind = el.dataset.t !== undefined ? "t" : "s", i = +(el.dataset.t ?? el.dataset.s);
+      const list = kind === "t" ? p.textos : p.stickers;
+      el.onpointerdown = e => {
+        const it = list[i], x0 = e.clientX, a0 = it.inicio, b0 = it.fin, side = e.target.dataset.bh;
+        let moved = false;
+        el.setPointerCapture(e.pointerId);
+        el.onpointermove = ev => {
+          const dt = (ev.clientX - x0) / PPS;
+          if (Math.abs(ev.clientX - x0) > 4) moved = true;
+          if (!moved) return;
+          const T = total(p);
+          if (side === "l") it.inicio = Math.min(Math.max(0, a0 + dt), it.fin - 0.3);
+          else if (side === "r") it.fin = Math.max(Math.min(T, b0 + dt), it.inicio + 0.3);
+          else { const len = b0 - a0; it.inicio = Math.min(Math.max(0, a0 + dt), Math.max(0, T - len)); it.fin = it.inicio + len; }
+          const m = timeMap(), a = tx(it.inicio, m);
+          el.style.left = a + "px"; el.style.width = Math.max(30, tx(it.fin, m) - a) + "px";
+        };
+        el.onpointerup = () => {
+          el.onpointermove = el.onpointerup = null;
+          if (moved) { commit(); if (tool) openTool(tool); }
+          else selectLayer(kind, i);
+        };
+      };
+    }
+
+    function selectLayer(kind, i) {
+      sel = -1; trans = -1;
+      selT = kind === "t" ? i : -1; selS = kind === "s" ? i : -1;
+      paint(); openTool(kind === "t" ? "texto-ed" : "sticker-ed");
+      const it = (kind === "t" ? p.textos : p.stickers)[i];
+      if (it && video.duration) { video.pause(); video.currentTime = Math.min(video.duration - 0.05, it.inicio + 0.4); }
+    }
+
+    // capa sobre el video: muestra el texto/sticker elegido y se mueve arrastrando
+    function overlay() {
+      const ov = $(".rx-ov");
+      const it = selT >= 0 ? p.textos[selT] : selS >= 0 ? p.stickers[selS] : null;
+      if (!it || !video.videoWidth) { ov.hidden = true; return; }
+      const st = $(".rx-stage").getBoundingClientRect(), vr = video.getBoundingClientRect();
+      const k = Math.min(vr.width / video.videoWidth, vr.height / video.videoHeight);
+      const w = video.videoWidth * k, h = video.videoHeight * k;
+      const left = vr.left - st.left + (vr.width - w) / 2, top = vr.top - st.top + (vr.height - h) / 2;
+      Object.assign(ov.style, { left: left + "px", top: top + "px", width: w + "px", height: h + "px" });
+      ov.hidden = false;
+      const s = w / 1080;
+      let inner;
+      if (selT >= 0) {
+        const fam = { title: "DER Titulo", subtitle: "DER Sub", body: "DER Cuerpo" }[it.rol] || "DER Sub";
+        const hl = (it.color || "").toLowerCase() === BRAND.naranja ? "#fff" : BRAND.naranja;
+        const html = esc(it.texto || "Texto").replace(/\*([^*]+)\*/g, `<b style="color:${hl};font-weight:inherit">$1</b>`).replace(/\n/g, "<br>");
+        inner = `<div class="rx-ov-it" style="left:${it.x * 100}%;top:${it.y * 100}%;font-family:'${fam}';font-size:${it.tamano * s}px;color:${it.color};
+          text-align:${{ izquierda: "left", centro: "center", derecha: "right" }[it.alinear] || "center"};${it.caja ? `background:${it.caja};padding:${it.tamano * s * .28}px ${it.tamano * s * .45}px;border-radius:${it.tamano * s * .18}px;` : "text-shadow:0 2px 4px rgba(0,0,0,.6);"}
+          ${it.mayus || it.rol === "title" ? "text-transform:uppercase;" : ""}max-width:84%">${html}</div>`;
+      } else {
+        const label = cat.stickers[it.tipo] || it.tipo;
+        const size = it.tipo === "marco" ? "inset:6%;left:50%;top:50%;width:88%;height:88%" : `width:${(it.tipo === "logo" ? 260 : 160) * it.tamano * s}px;height:${(it.tipo === "logo" ? 120 : 70) * it.tamano * s}px`;
+        inner = `<div class="rx-ov-it rx-ov-st" style="left:${it.x * 100}%;top:${it.y * 100}%;${size}"><span>${esc(label)}</span></div>`;
+      }
+      ov.innerHTML = inner + `<p class="rx-ov-tip">Arrastralo para ubicarlo</p>`;
+      const el = ov.querySelector(".rx-ov-it");
+      el.onpointerdown = e => {
+        e.preventDefault(); el.setPointerCapture(e.pointerId);
+        const r = ov.getBoundingClientRect();
+        el.onpointermove = ev => {
+          it.x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width));
+          it.y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
+          el.style.left = it.x * 100 + "%"; el.style.top = it.y * 100 + "%";
+        };
+        el.onpointerup = () => { el.onpointermove = el.onpointerup = null; commit(); };
+      };
+    }
+    video.addEventListener("loadedmetadata", () => overlay());
+    window.addEventListener("resize", () => overlay());
+
     function select(i) {
+      selT = selS = -1;
       sel = i; trans = -1;
       if (i >= 0 && tool && CLIP_TOOLS.has(tool)) openTool(tool); else closeTool();
       paint();
@@ -247,15 +383,85 @@ const ReelEditor = (() => {
         ["duplicar", "duplicar", "Duplicar"], ["mover", "mover", "Mover"], ["borrar", "borrar", "Borrar"],
       ] : [
         ["agregar", "agregar", "Agregar"], ["formato", "formato", "Formato"], ["musica", "musica", "Música"],
+        ["textos", "texto", "Texto"], ["stickers", "logo", "Stickers"], ["ritmo", "velocidad", "Al ritmo"],
         ["voz", "voz", "Voz en off"], ["titulo", "texto", "Título"], ["marca", "logo", "Logo y cierre"],
         ["todo", "filtro", "Filtro a todo"],
       ];
+      if (selT >= 0 || selS >= 0) {
+        const nav = $(".rx-tools");
+        nav.innerHTML = `<div class="rx-tools-h">${selT >= 0 ? "Texto" : "Sticker"} elegido <button type="button" class="rx-desel">Deseleccionar</button></div>
+          <div class="rx-tools-r"><button type="button" data-lay="dup">${ico("duplicar")}<span>Duplicar</span></button>
+          <button type="button" data-lay="todo">${ico("formato")}<span>Todo el reel</span></button>
+          <button type="button" data-lay="del" class="rx-danger">${ico("borrar")}<span>Borrar</span></button></div>`;
+        nav.querySelector(".rx-desel").onclick = () => { selT = selS = -1; closeTool(); paint(); };
+        nav.querySelectorAll("[data-lay]").forEach(b => b.onclick = () => layerAction(b.dataset.lay));
+        return;
+      }
       const nav = $(".rx-tools");
       nav.innerHTML = (c ? `<div class="rx-tools-h">Clip ${sel + 1} · ${c.kind === "foto" ? "foto" : "video"} <button type="button" class="rx-desel">Deseleccionar</button></div>` : `<div class="rx-tools-h">Tocá un clip para editarlo · o editá todo el reel</div>`) +
         `<div class="rx-tools-r">${items.map(([k, ic, n]) => `<button type="button" data-tool="${k}" class="${tool === k ? "on" : ""}${k === "borrar" ? " rx-danger" : ""}">${ico(ic)}<span>${n}</span></button>`).join("")}</div>`;
       nav.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => action(b.dataset.tool));
       const ds = nav.querySelector(".rx-desel");
       if (ds) ds.onclick = () => select(-1);
+    }
+
+    function layerAction(a) {
+      const list = selT >= 0 ? p.textos : p.stickers, i = selT >= 0 ? selT : selS;
+      if (a === "dup") { list.splice(i + 1, 0, { ...clone(list[i]), id: uid(), y: Math.min(0.95, list[i].y + 0.06) }); if (selT >= 0) selT++; else selS++; toast("Duplicado."); }
+      if (a === "todo") { list[i].inicio = 0; list[i].fin = total(p); toast("Ahora dura todo el reel."); }
+      if (a === "del") { list.splice(i, 1); selT = selS = -1; closeTool(); toast("Borrado (↶ para deshacer)."); }
+      commit(); if (selT >= 0 || selS >= 0) openTool(selT >= 0 ? "texto-ed" : "sticker-ed");
+    }
+
+    function addText(preset) {
+      const T = total(p), now = Math.min(Math.max(0, video.currentTime || 0), Math.max(0, T - 1));
+      const base = { id: uid(), texto: "Escribí acá", inicio: now, fin: Math.min(T, now + 3), x: 0.5, y: 0.5, tamano: 64, rol: "subtitle",
+        color: BRAND.blanco, caja: "", alinear: "centro", anim: "aparecer", mayus: false, sombra: true };
+      const P = {
+        titulo: { texto: "Título *grande*", rol: "title", tamano: 96, y: 0.42, anim: "subir" },
+        subtitulo: { texto: "Subtítulo", rol: "subtitle", tamano: 56, y: 0.55 },
+        etiqueta: { texto: "Asunción · 2026", rol: "subtitle", tamano: 44, y: 0.18, caja: BRAND.naranja, anim: "deslizar" },
+        cta: { texto: "Escribinos · somosder.ar", rol: "subtitle", tamano: 50, y: 0.82, caja: BRAND.oscuro, anim: "golpe" },
+        texto: { texto: "Texto corto", rol: "body", tamano: 48, y: 0.7 },
+        escribir: { texto: "Así se hace un evento", rol: "subtitle", tamano: 64, y: 0.5, anim: "escribir" },
+      }[preset] || {};
+      p.textos.push({ ...base, ...P });
+      selT = p.textos.length - 1; selS = -1; sel = -1;
+      commit(); openTool("texto-ed");
+      setTimeout(() => body.querySelector("textarea")?.select(), 50);
+    }
+
+    function addSticker(tipo) {
+      const T = total(p);
+      const pos = { logo: [0.82, 0.1], marco: [0.5, 0.5], puntos: [0.85, 0.85], barra: [0.15, 0.3], web: [0.5, 0.9], flecha: [0.5, 0.6] }[tipo] || [0.5, 0.5];
+      p.stickers.push({ id: uid(), tipo, inicio: 0, fin: T, x: pos[0], y: pos[1], tamano: 1, color: BRAND.naranja, opacidad: 1, giro: 0,
+        variante: "on_dark", logo: "", anim: "aparecer" });
+      selS = p.stickers.length - 1; selT = -1; sel = -1;
+      commit(); openTool("sticker-ed");
+    }
+
+    // cortar al ritmo: cada clip dura N tiempos de la música (cortes secos, como los "beat sync" de CapCut)
+    async function alRitmo(nBeats, keepTransitions) {
+      toast("Buscando el ritmo de la música…");
+      try {
+        const r = await fetch("/api/reel/ritmo", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ music: p.opciones.music, music_start: p.opciones.music_start || 0 }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error);
+        const beat = 60 / j.bpm, step = beat * nBeats;
+        let cortos = 0;
+        p.clips.forEach((c, i) => {
+          const T = keepTransitions && i < p.clips.length - 1 && c.transition !== "none" ? c.transition_seconds : 0;
+          const want = step + T + (i === 0 ? j.primero : 0);
+          if (!keepTransitions) c.transition = "none";
+          if (c.kind === "foto") { c.start = 0; c.end = c.source_duration = +want.toFixed(3); return; }
+          const room = (c.source_duration - c.start) / c.speed;
+          if (room < want) { cortos++; c.end = c.source_duration; return; }
+          c.end = +(c.start + want * c.speed).toFixed(3);
+        });
+        commit();
+        toast(`Listo: ${Math.round(j.bpm)} BPM, un corte cada ${fmt(step)} s.${cortos ? ` ${cortos} clip(s) eran más cortos y quedaron enteros.` : ""}`);
+      } catch (err) { toast("No se pudo: " + err.message); }
     }
 
     function action(k) {
@@ -277,7 +483,10 @@ const ReelEditor = (() => {
     // --- paneles ---------------------------------------------------------------
     const sheet = $(".rx-sheet"), body = $(".rx-sheet-b");
     $(".rx-ok").onclick = () => closeTool();
-    function closeTool() { tool = null; sheet.hidden = true; root.classList.remove("con-panel"); if (trans >= 0) { trans = -1; paint(); } else tools(); }
+    function closeTool() {
+      tool = null; sheet.hidden = true; root.classList.remove("con-panel");
+      if (trans >= 0) { trans = -1; paint(); } else { tools(); overlay(); }
+    }
     const range = (k, label, min, max, step, val, suf = "") => `<label class="rx-r"><span>${label}<output>${fmt(val)}${suf}</output></span>
       <input type="range" data-k="${k}" data-suf="${suf}" min="${min}" max="${max}" step="${step}" value="${val}"></label>`;
     const chips = (k, items, val) => `<div class="rx-chips">${(Array.isArray(items) ? items : Object.entries(items)).map(([v, n]) =>
@@ -285,11 +494,14 @@ const ReelEditor = (() => {
     const TITLES = { recortar: "Recortar", dividir: "Dividir", velocidad: "Velocidad", duracion: "Duración de la foto", volumen: "Volumen",
       encuadre: "Encuadre", filtros: "Filtros", ajustes: "Ajustes", animacion: "Animación", girar: "Girar y espejar",
       congelar: "Congelar imagen", mover: "Mover", transicion: "Transición", formato: "Formato", musica: "Música",
-      voz: "Voz en off", titulo: "Título de apertura", marca: "Logo y cierre", todo: "Filtro para todos los clips" };
+      voz: "Voz en off", titulo: "Título de apertura", marca: "Logo y cierre", todo: "Filtro para todos los clips",
+      textos: "Texto", stickers: "Stickers", ritmo: "Cortar al ritmo", "texto-ed": "Editar texto", "sticker-ed": "Editar sticker" };
 
     function openTool(k) {
       if (CLIP_TOOLS.has(k) && sel < 0) return closeTool();
       if (k === "transicion" && trans < 0) return closeTool();
+      if (k === "texto-ed" && selT < 0) return closeTool();
+      if (k === "sticker-ed" && selS < 0) return closeTool();
       tool = k; sheet.hidden = false; root.classList.add("con-panel");
       const c = p.clips[sel];
       $(".rx-sheet-h b").textContent = TITLES[k] || "";
@@ -379,6 +591,49 @@ const ReelEditor = (() => {
             (o.voz ? range("voz_volume", "Volumen de la voz", 0, 2, 0.05, o.voz_volume ?? 1) +
               `<label class="rx-sw"><input type="checkbox" data-k="voz_ducking" ${o.voz_ducking !== false ? "checked" : ""}><span>Bajar la música cuando hablo</span></label>
               <button type="button" class="rx-btn sec rx-danger" data-a="quitar-voz">Quitar la voz</button>` : "");
+        case "textos":
+          return `<div class="rx-presets">${[["titulo", "Título grande"], ["subtitulo", "Subtítulo"], ["etiqueta", "Etiqueta con caja"],
+            ["cta", "Llamado a la acción"], ["texto", "Texto corto"], ["escribir", "Máquina de escribir"]].map(([k2, n]) =>
+            `<button type="button" data-a="add-text" data-v="${k2}" class="rx-preset rx-p-${k2}"><b>${n}</b></button>`).join("")}</div>
+            ${p.textos.length ? `<div class="rx-sub">En este reel</div>${p.textos.map((t, i) => `<button type="button" class="rx-li" data-a="pick-text" data-v="${i}">
+              <span>${esc((t.texto || "").replace(/\*/g, "").slice(0, 40))}</span><small>${fmt(t.inicio)}–${fmt(t.fin)} s</small></button>`).join("")}` : ""}
+            <p class="rx-hint">Aparece donde está el video en pausa. Después lo movés arrastrando sobre el video y en la pista de abajo.</p>`;
+        case "texto-ed": {
+          const t = p.textos[selT], T = total(p);
+          return `<textarea class="rx-ta" data-tk="texto" rows="2" placeholder="Escribí el texto">${esc(t.texto)}</textarea>
+            <p class="rx-hint">*Entre asteriscos* va resaltado. Enter = renglón nuevo.</p>
+            <div class="rx-chips">${[["0.14", "Arriba"], ["0.5", "Centro"], ["0.82", "Abajo"]].map(([v, n]) => `<button type="button" data-tpos="${v}">${n}</button>`).join("")}</div>` +
+            range("t-tamano", "Tamaño", 16, 200, 1, t.tamano) +
+            chips("t-rol", [["title", "Netron"], ["subtitle", "Subtítulo"], ["body", "Jost"]], t.rol) +
+            `<div class="rx-sub">Color</div><div class="rx-sw-row">${Object.entries(BRAND).map(([n, v]) => `<button type="button" data-tcol="${v}" aria-label="${n}" class="rx-dot ${t.color === v ? "on" : ""}" style="background:${v}"></button>`).join("")}</div>
+            <div class="rx-sub">Caja de fondo</div><div class="rx-sw-row"><button type="button" data-tbox="" class="rx-blur ${!t.caja ? "on" : ""}">Sin caja</button>
+              ${Object.entries(BRAND).map(([n, v]) => `<button type="button" data-tbox="${v}" aria-label="caja ${n}" class="rx-dot ${t.caja === v ? "on" : ""}" style="background:${v}"></button>`).join("")}</div>` +
+            chips("t-alinear", [["izquierda", "Izquierda"], ["centro", "Centro"], ["derecha", "Derecha"]], t.alinear) +
+            `<div class="rx-sub">Animación</div>` + chips("t-anim", cat.anim_texto, t.anim) +
+            range("t-inicio", "Aparece en", 0, Math.max(0.5, T - 0.3), 0.1, t.inicio, " s") + range("t-fin", "Se va en", 0.3, T, 0.1, t.fin, " s") +
+            `<label class="rx-sw"><input type="checkbox" data-tchk="mayus" ${t.mayus ? "checked" : ""}><span>Mayúsculas</span></label>
+             <label class="rx-sw"><input type="checkbox" data-tchk="sombra" ${t.sombra !== false ? "checked" : ""}><span>Sombra (sin caja)</span></label>`;
+        }
+        case "stickers":
+          return `<div class="rx-presets">${Object.entries(cat.stickers).map(([k2, n]) => `<button type="button" data-a="add-sticker" data-v="${k2}" class="rx-preset"><b>${esc(n)}</b></button>`).join("")}</div>
+            <p class="rx-hint">Se agrega para todo el reel. Lo ubicás arrastrando sobre el video y acortás su tiempo en la pista.</p>`;
+        case "sticker-ed": {
+          const st = p.stickers[selS], T = total(p);
+          return `<p class="rx-hint"><b>${esc(cat.stickers[st.tipo] || st.tipo)}</b></p>` +
+            range("s-tamano", "Tamaño", 0.2, 3, 0.05, st.tamano, "x") +
+            (st.tipo === "logo" ? chips("s-variante", [["on_dark", "Para fondo oscuro"], ["on_light", "Para fondo claro"], ["on_orange", "Para naranja"]], st.variante) +
+              `<select class="rx-sel" data-sk="logo"><option value="">Logo DER</option>${(opts.logos || []).map(n => `<option value="${esc(n)}" ${st.logo === n ? "selected" : ""}>${esc(n.replace(/\.(png|webp)$/i, ""))}</option>`).join("")}</select>`
+              : `<div class="rx-sub">Color</div><div class="rx-sw-row">${Object.entries(BRAND).map(([n, v]) => `<button type="button" data-scol="${v}" aria-label="${n}" class="rx-dot ${st.color === v ? "on" : ""}" style="background:${v}"></button>`).join("")}</div>`) +
+            (st.tipo === "flecha" ? range("s-giro", "Giro", -180, 180, 5, st.giro, "°") : "") +
+            range("s-opacidad", "Opacidad", 0.1, 1, 0.05, st.opacidad) +
+            `<div class="rx-sub">Animación</div>` + chips("s-anim", Object.fromEntries(Object.entries(cat.anim_texto).filter(([k2]) => k2 !== "escribir")), st.anim) +
+            range("s-inicio", "Aparece en", 0, Math.max(0.5, T - 0.3), 0.1, st.inicio, " s") + range("s-fin", "Se va en", 0.3, T, 0.1, st.fin, " s");
+        }
+        case "ritmo":
+          return `<p class="rx-hint">Ajusta la duración de cada clip para que los cortes caigan en los golpes de la música elegida${p.opciones.music === "none" ? " (primero elegí una música)" : ""}.</p>
+            <div class="rx-grid4"><button type="button" class="rx-btn" data-a="ritmo" data-v="1">Cada golpe</button><button type="button" class="rx-btn" data-a="ritmo" data-v="2">Cada 2</button>
+            <button type="button" class="rx-btn" data-a="ritmo" data-v="4">Cada 4 (un compás)</button><button type="button" class="rx-btn" data-a="ritmo" data-v="8">Cada 8</button></div>
+            <label class="rx-sw"><input type="checkbox" class="rx-keep-tr"><span>Mantener las transiciones (si no, cortes secos)</span></label>`;
         case "titulo":
           return `<label class="rx-l">Título <small>*entre asteriscos* va en naranja</small><input type="text" data-k="title" value="${esc(o.title)}" placeholder="Así vivimos el *Event Hub*"></label>
             <label class="rx-l">Subtítulo<input type="text" data-k="subtitle" value="${esc(o.subtitle)}" placeholder="Asunción · Octubre 2026"></label>
@@ -399,6 +654,15 @@ const ReelEditor = (() => {
         r.oninput = () => {
           const v = parseFloat(r.value), key = r.dataset.k;
           r.closest(".rx-r").querySelector("output").textContent = fmt(v) + r.dataset.suf;
+          if (/^[ts]-/.test(key)) {
+            const it = key[0] === "t" ? p.textos[selT] : p.stickers[selS], f = key.slice(2);
+            it[f] = v;
+            if (f === "inicio" && it.fin < v + 0.3) it.fin = v + 0.3;
+            if (f === "fin" && it.inicio > v - 0.3) it.inicio = Math.max(0, v - 0.3);
+            overlay(); lanes();
+            if (f === "inicio" && video.duration) { video.pause(); video.currentTime = Math.min(video.duration - 0.05, v + 0.3); }
+            return;
+          }
           if (k === "transicion") p.clips[trans][key] = v;
           else if (["music_volume", "music_start", "music_fade_out", "voz_volume"].includes(key)) o[key] = v;
           else if (key === "dur") { c.start = 0; c.end = v; c.source_duration = v; }
@@ -413,6 +677,7 @@ const ReelEditor = (() => {
       });
       body.querySelectorAll("button[data-k]").forEach(b => b.onclick = () => {
         const key = b.dataset.k, v = b.dataset.v;
+        if (/^[ts]-/.test(key)) { (key[0] === "t" ? p.textos[selT] : p.stickers[selS])[key.slice(2)] = v; commit(); return openTool(k); }
         if (k === "transicion") p.clips[trans].transition = v;
         else if (key === "formato") o.formato = v;
         else if (key === "filtro-global") { p.clips.forEach(x => { x.filtro = v; }); toast("Filtro aplicado a todos los clips."); }
@@ -434,6 +699,23 @@ const ReelEditor = (() => {
         if (b.tagName === "INPUT") b.onchange = () => panelAction(b.dataset.a, c, b);
         else b.onclick = () => panelAction(b.dataset.a, c, b);
       });
+      // texto elegido
+      if (k === "texto-ed") {
+        const t = p.textos[selT];
+        const ta = body.querySelector("[data-tk=texto]");
+        ta.oninput = () => { t.texto = ta.value; overlay(); lanes(); };
+        ta.onchange = commit;
+        body.querySelectorAll("[data-tpos]").forEach(b => b.onclick = () => { t.y = +b.dataset.tpos; t.x = 0.5; commit(); });
+        body.querySelectorAll("[data-tcol]").forEach(b => b.onclick = () => { t.color = b.dataset.tcol; commit(); openTool(k); });
+        body.querySelectorAll("[data-tbox]").forEach(b => b.onclick = () => { t.caja = b.dataset.tbox; commit(); openTool(k); });
+        body.querySelectorAll("[data-tchk]").forEach(x => x.onchange = () => { t[x.dataset.tchk] = x.checked; commit(); });
+      }
+      if (k === "sticker-ed") {
+        const st = p.stickers[selS];
+        body.querySelectorAll("[data-scol]").forEach(b => b.onclick = () => { st.color = b.dataset.scol; commit(); openTool(k); });
+        const lg = body.querySelector("[data-sk=logo]");
+        if (lg) lg.onchange = () => { st.logo = lg.value; commit(); };
+      }
       // video del tramo (recortar / dividir / congelar)
       const sv = body.querySelector(".rx-scrub video");
       if (sv) {
@@ -491,6 +773,10 @@ const ReelEditor = (() => {
         } catch (err) { toast("No se pudo congelar: " + err.message); el.disabled = false; el.textContent = "Congelar este cuadro (2 s)"; }
         return;
       }
+      if (a === "add-text") return addText(el.dataset.v);
+      if (a === "pick-text") return selectLayer("t", +el.dataset.v);
+      if (a === "add-sticker") return addSticker(el.dataset.v);
+      if (a === "ritmo") return alRitmo(+el.dataset.v, body.querySelector(".rx-keep-tr").checked);
       switch (a) {
         case "centrar": c.zoom = 1; c.pan_x = 0; c.pan_y = 0; break;
         case "filtro-todos": p.clips.forEach(x => { x.filtro = c.filtro; }); toast("Filtro aplicado a todos los clips."); break;
@@ -597,7 +883,8 @@ const ReelEditor = (() => {
         if (preview) {
           $(".rx-badge").textContent = "Vista previa · baja calidad";
         } else {
-          saved = clone(s.proyecto); p = clone(s.proyecto); last = snap(); hist.length = 0; fut.length = 0;
+          saved = clone(s.proyecto); p = clone(s.proyecto); p.textos = p.textos || []; p.stickers = p.stickers || [];
+          last = snap(); hist.length = 0; fut.length = 0;
           localStorage.removeItem(KEY);
           $(".rx-badge").textContent = `Versión ${saved.version} · lista para descargar`;
           toast("Listo. Ya podés descargarla desde la pantalla anterior (✕).");

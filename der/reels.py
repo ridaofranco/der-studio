@@ -273,6 +273,163 @@ def render_watermark(path: Path, logo_choice: str = "auto", size: tuple[int, int
     return path
 
 
+# --- Textos y stickers (capas con tiempo) -------------------------------------------
+
+TEXT_ANIMS = {"aparecer": "Aparecer", "subir": "Subir", "deslizar": "Deslizar", "golpe": "Golpe",
+              "escribir": "Máquina de escribir", "ninguna": "Sin animación"}
+STICKERS = {"logo": "Logo", "marco": "Marco de esquineros", "puntos": "Grilla de puntos", "barra": "Barra naranja",
+            "web": "SOMOSDER.AR", "flecha": "Flecha"}
+
+
+def _rgb(c: str, default: str) -> str:
+    return c if isinstance(c, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", c) else default
+
+
+def render_text(t: dict, size: tuple[int, int], dst: Path, upto: int | None = None) -> tuple[int, int]:
+    """Dibuja un texto (con caja opcional) recortado a su tamaño. Devuelve (x, y) donde va en el cuadro.
+    `upto` = cantidad de letras visibles (para la máquina de escribir)."""
+    w, h = size
+    s = w / 1080
+    role = t.get("rol", "subtitle") if t.get("rol") in ("title", "subtitle", "body") else "subtitle"
+    fsize = max(8, int(float(t.get("tamano", 64)) * s))
+    f = brand.font(role, fsize)
+    text = str(t.get("texto", ""))
+    if t.get("mayus") or role == "title":
+        text = text.upper()
+    color = _rgb(t.get("color"), WHITE)
+    hl = WHITE if color.lower() == ORANGE.lower() else ORANGE
+    max_w = w * 0.84
+    lines = []
+    for para in text.split("\n"):
+        lines += graphics._wrap(graphics._tokens(para), f, max_w) or [[]]
+    if upto is not None:  # recortar a las primeras `upto` letras
+        left, cut = upto, []
+        for line in lines:
+            row = []
+            for word, hi in line:
+                if left <= 0:
+                    break
+                row.append((word[:left], hi))
+                left -= len(word) + 1
+            cut.append(row)
+            if left <= 0:
+                break
+        lines = cut
+    gap = 1.18
+    lh = fsize * gap
+    asc = f.getmetrics()[0]
+    widths = [sum(f.getlength(wd) for wd, _ in ln) + f.getlength(" ") * max(0, len(ln) - 1) for ln in lines]
+    full_widths = widths if upto is None else [max(widths + [1])] * len(widths)
+    bw = max([1] + [int(x) for x in widths])
+    bh = max(1, int(len(lines) * lh))
+    box = t.get("caja") if t.get("caja") not in (None, "", "ninguna") else None
+    pad_x, pad_y = (int(fsize * 0.45), int(fsize * 0.28)) if box else (int(fsize * 0.1), int(fsize * 0.1))
+    shadow = not box and t.get("sombra", True)
+    img = Image.new("RGBA", (bw + 2 * pad_x, bh + 2 * pad_y), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    if box:
+        d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=int(fsize * 0.18), fill=_rgb(box, DARK))
+    align = t.get("alinear", "centro")
+    for i, ln in enumerate(lines):
+        lw = widths[i]
+        x0 = pad_x + ((bw - lw) / 2 if align == "centro" else (bw - lw) if align == "derecha" else 0)
+        yy = pad_y + i * lh + (lh - asc) * 0.35
+        x = x0
+        for word, hi in ln:
+            col = hl if hi else color
+            if shadow:
+                d.text((x + max(1, fsize * 0.04), yy + max(1, fsize * 0.05)), word, font=f, fill=(0, 0, 0, 150))
+            d.text((x, yy), word, font=f, fill=col)
+            x += f.getlength(word) + f.getlength(" ")
+    img.save(dst)
+    cx, cy = float(t.get("x", 0.5)), float(t.get("y", 0.5))
+    if upto is not None:
+        # la posición la fija el texto completo (así no "baila" mientras se escribe)
+        full = render_text({**t}, size, dst.with_name(dst.stem + "_full.png"))
+        fimg = Image.open(dst.with_name(dst.stem + "_full.png"))
+        x = int(full[0] + (fimg.width - img.width) * (0 if align == "izquierda" else 0.5 if align == "centro" else 1))
+        return x, full[1]
+    x = int(min(w - img.width, max(0, cx * w - img.width / 2)))
+    y = int(min(h - img.height, max(0, cy * h - img.height / 2)))
+    return x, y
+
+
+def render_sticker(st: dict, size: tuple[int, int], dst: Path, logo_choice: str = "auto") -> tuple[int, int]:
+    w, h = size
+    s = w / 1080
+    kind = st.get("tipo", "logo")
+    scale = max(0.2, min(3.0, float(st.get("tamano", 1.0))))
+    color = _rgb(st.get("color"), ORANGE)
+    if kind == "logo":
+        variant = st.get("variante", "on_dark")
+        img = brand.logo_sized(variant if variant in ("on_dark", "on_light", "on_orange") else "on_dark",
+                               width=max(8, int(260 * s * scale)), choice=st.get("logo") or logo_choice)
+    elif kind == "marco":
+        m = int(60 * s)
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        graphics.corner_brackets(ImageDraw.Draw(img), (m, m, w - m, h - m), int(110 * s * scale),
+                                 max(2, int(10 * s * scale)), color, "all")
+        img.save(dst)
+        return 0, 0
+    elif kind == "puntos":
+        gap, r = int(28 * s * scale), max(2, int(4 * s * scale))
+        img = graphics.element_png("puntos", cols=6, rows=4, gap=gap, r=r, color=color).copy()
+    elif kind == "barra":
+        img = Image.new("RGBA", (max(4, int(140 * s * scale)), max(2, int(14 * s * scale))), color)
+    elif kind == "web":
+        f = brand.font("subtitle", max(8, int(34 * s * scale)))
+        tw = int(f.getlength(brand.WEBSITE.upper()))
+        img = Image.new("RGBA", (tw + int(36 * s * scale), int(64 * s * scale)), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=int(10 * s * scale), fill=color)
+        d.text((img.width / 2, img.height / 2), brand.WEBSITE.upper(), font=f, fill=WHITE, anchor="mm")
+    else:  # flecha
+        L = int(160 * s * scale)
+        img = Image.new("RGBA", (L, L), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        th = max(3, int(L * 0.12))
+        d.line([(L * 0.1, L * 0.5), (L * 0.85, L * 0.5)], fill=color, width=th)
+        d.polygon([(L * 0.95, L * 0.5), (L * 0.62, L * 0.22), (L * 0.62, L * 0.78)], fill=color)
+        rot = float(st.get("giro", 0))
+        if rot:
+            img = img.rotate(-rot, expand=True, resample=Image.BICUBIC)
+    op = max(0.1, min(1.0, float(st.get("opacidad", 1.0))))
+    if op < 1:
+        img.putalpha(img.getchannel("A").point(lambda a: int(a * op)))
+    img.save(dst)
+    cx, cy = float(st.get("x", 0.5)), float(st.get("y", 0.5))
+    return int(min(w - img.width, max(0, cx * w - img.width / 2))), int(min(h - img.height, max(0, cy * h - img.height / 2)))
+
+
+def layer_overlays(textos: list[dict], stickers: list[dict], size: tuple[int, int], tmp: Path,
+                   logo_choice: str) -> list[dict]:
+    out = []
+    for i, st in enumerate(stickers):
+        png = tmp / f"sticker{i}.png"
+        x, y = render_sticker(st, size, png, logo_choice)
+        out.append({"png": png, "t0": float(st["inicio"]), "t1": float(st["fin"]), "x": x, "y": y,
+                    "anim": st.get("anim", "aparecer")})
+    for i, t in enumerate(textos):
+        if not str(t.get("texto", "")).strip():
+            continue
+        t0, t1 = float(t["inicio"]), float(t["fin"])
+        if t.get("anim") == "escribir":
+            n = len(str(t["texto"]))
+            steps = max(1, min(n, 24))
+            write_time = min(1.2, (t1 - t0) * 0.6)
+            for k in range(1, steps + 1):
+                png = tmp / f"texto{i}_{k}.png"
+                x, y = render_text(t, size, png, upto=max(1, round(n * k / steps)))
+                a = t0 + write_time * (k - 1) / steps
+                b = t0 + write_time * k / steps if k < steps else t1
+                out.append({"png": png, "t0": a, "t1": b, "x": x, "y": y, "anim": "ninguna"})
+            continue
+        png = tmp / f"texto{i}.png"
+        x, y = render_text(t, size, png)
+        out.append({"png": png, "t0": t0, "t1": t1, "x": x, "y": y, "anim": t.get("anim", "aparecer")})
+    return out
+
+
 # --- Un clip ------------------------------------------------------------------
 
 def _atempo(speed: float) -> str:
@@ -431,13 +588,15 @@ def timeline_length(durs: list[float], transitions: list[tuple[str, float]]) -> 
 
 
 def _join(clips: list[tuple[Path, float]], transitions: list[tuple[str, float]],
-          overlays: list[tuple[Path, float, float]], dst: Path, log: list[str], preview: bool = False) -> float:
-    """Une los clips (una transición por corte) y aplica superposiciones (título, marca de agua)."""
+          overlays: list, dst: Path, log: list[str], preview: bool = False) -> float:
+    """Une los clips (una transición por corte) y aplica las capas: marca de agua, título, textos y stickers.
+    Cada capa: (png, desde, hasta) o {"png", "t0", "t1", "x", "y", "anim"}."""
+    overlays = [o if isinstance(o, dict) else {"png": o[0], "t0": o[1], "t1": o[2]} for o in overlays]
     cmd = ["ffmpeg", "-y"]
     for p, _ in clips:
         cmd += ["-i", str(p)]
-    for png, _, _ in overlays:
-        cmd += ["-loop", "1", "-i", str(png)]
+    for o in overlays:
+        cmd += ["-loop", "1", "-i", str(o["png"])]
     # misma base de tiempo y formato en todos los tramos: xfade no acepta mezclas
     # (por ejemplo, la salida de un corte seco con el clip siguiente)
     parts = [f"[{i}:v]fps={FPS},settb=AVTB,format=yuv420p,setsar=1[n{i}];"
@@ -458,14 +617,29 @@ def _join(clips: list[tuple[Path, float]], transitions: list[tuple[str, float]],
             acc += dur
         v_prev, a_prev = f"[v{i}]", f"[a{i}]"
     n = len(clips)
-    for k, (_, t0, t1) in enumerate(overlays):
+    for k, o in enumerate(overlays):
         idx = n + k
-        t1 = min(t1, acc)
-        fades = f"fade=in:st={t0:.2f}:d=0.4:alpha=1"
-        if t1 < acc - 0.05:
-            fades += f",fade=out:st={t1 - 0.4:.2f}:d=0.4:alpha=1"
-        parts.append(f"[{idx}:v]format=rgba,{fades}[ov{k}]")
-        parts.append(f"{v_prev}[ov{k}]overlay=0:0:enable='between(t,{t0:.2f},{t1:.2f})':shortest=1[vo{k}]")
+        t0, t1 = max(0.0, o["t0"]), min(o["t1"], acc)
+        if t1 - t0 < 0.05:
+            parts.append(f"[{idx}:v]nullsink")
+            continue
+        anim = o.get("anim", "aparecer")
+        d = 0.12 if anim == "golpe" else 0.35
+        fades = []
+        if anim not in ("ninguna", "escribir"):
+            fades.append(f"fade=in:st={t0:.2f}:d={d}:alpha=1")
+            if t1 < acc - 0.05:
+                fades.append(f"fade=out:st={max(t0, t1 - d):.2f}:d={d}:alpha=1")
+        fade_s = ("," + ",".join(fades)) if fades else ""
+        x, y = o.get("x", 0), o.get("y", 0)
+        xe, ye = f"{x}", f"{y}"
+        if anim == "subir":
+            ye = f"{y}+if(lt(t-{t0:.2f},0.45),(1-(t-{t0:.2f})/0.45)*main_h*0.05,0)"
+        elif anim == "deslizar":
+            xe = f"{x}-if(lt(t-{t0:.2f},0.45),(1-(t-{t0:.2f})/0.45)*main_w*0.08,0)"
+        parts.append(f"[{idx}:v]format=rgba{fade_s}[ov{k}]")
+        parts.append(f"{v_prev}[ov{k}]overlay=x='{xe}':y='{ye}':eval=frame:"
+                     f"enable='between(t,{t0:.2f},{t1:.2f})':shortest=1[vo{k}]")
         v_prev = f"[vo{k}]"
     preset, crf = ("ultrafast", "30") if preview else ("veryfast", "19")
     cmd += ["-filter_complex", ";".join(parts), "-map", v_prev, "-map", a_prev,
@@ -625,7 +799,47 @@ def clean_project(data: dict, fuentes: Path) -> dict:
         voz_volume=_num(o.get("voz_volume", 1), 1.0, 0, 2), voz_ducking=bool(o.get("voz_ducking", True)),
     )
     return {"version": int(_num(data.get("version", 0), 0, 0, 10**6)), "clips": [asdict(c) for c in clips],
-            "opciones": opts.to_dict()}
+            "opciones": opts.to_dict(), "textos": clean_textos(data.get("textos")),
+            "stickers": clean_stickers(data.get("stickers"))}
+
+
+def _id(v) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(v or ""))[:12] or _new_id()
+
+
+def clean_textos(items) -> list[dict]:
+    out = []
+    for t in (items or [])[:40]:
+        txt = str(t.get("texto", ""))[:300]
+        a = _num(t.get("inicio", 0), 0, 0, 3600)
+        out.append({
+            "id": _id(t.get("id")), "texto": txt, "inicio": a, "fin": max(a + 0.2, _num(t.get("fin", a + 3), a + 3, 0, 3600)),
+            "x": _num(t.get("x", 0.5), 0.5, 0, 1), "y": _num(t.get("y", 0.5), 0.5, 0, 1),
+            "tamano": _num(t.get("tamano", 64), 64, 16, 260),
+            "rol": t.get("rol") if t.get("rol") in ("title", "subtitle", "body") else "subtitle",
+            "color": _rgb(t.get("color"), WHITE),
+            "caja": _rgb(t.get("caja"), "") if t.get("caja") not in (None, "", "ninguna") else "",
+            "alinear": t.get("alinear") if t.get("alinear") in ("izquierda", "centro", "derecha") else "centro",
+            "anim": t.get("anim") if t.get("anim") in TEXT_ANIMS else "aparecer",
+            "mayus": bool(t.get("mayus")), "sombra": bool(t.get("sombra", True)),
+        })
+    return out
+
+
+def clean_stickers(items) -> list[dict]:
+    out = []
+    for st in (items or [])[:30]:
+        a = _num(st.get("inicio", 0), 0, 0, 3600)
+        out.append({
+            "id": _id(st.get("id")), "tipo": st.get("tipo") if st.get("tipo") in STICKERS else "logo",
+            "inicio": a, "fin": max(a + 0.2, _num(st.get("fin", a + 3), a + 3, 0, 3600)),
+            "x": _num(st.get("x", 0.5), 0.5, 0, 1), "y": _num(st.get("y", 0.5), 0.5, 0, 1),
+            "tamano": _num(st.get("tamano", 1), 1, 0.2, 3), "color": _rgb(st.get("color"), ORANGE),
+            "opacidad": _num(st.get("opacidad", 1), 1, 0.1, 1), "giro": _num(st.get("giro", 0), 0, -180, 180),
+            "variante": st.get("variante") if st.get("variante") in ("on_dark", "on_light", "on_orange") else "on_dark",
+            "logo": Path(str(st.get("logo") or "")).name, "anim": st.get("anim") if st.get("anim") in TEXT_ANIMS else "aparecer",
+        })
+    return out
 
 
 def _cached(cache: Path, key: str) -> Path:
@@ -676,6 +890,7 @@ def render_project(project: dict, lote: Path, out_path: Path, log: list[str] | N
         if opts.title or opts.subtitle:
             overlays.append((render_title_overlay(tmp / "title.png", opts.title, opts.subtitle, size), 0.2,
                              min(3.6, body_end)))
+        overlays += layer_overlays(project.get("textos") or [], project.get("stickers") or [], size, tmp, opts.logo)
         full = tmp / "full.mp4"
         total = _join(parts, trans, overlays, full, log, preview)
         if progress:
