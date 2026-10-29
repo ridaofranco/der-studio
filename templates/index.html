@@ -182,6 +182,26 @@
     header nav::-webkit-scrollbar { display: none; }
     header nav button { white-space: nowrap; flex: 0 0 auto; padding: 8px 10px; }
   }
+  /* plantillas de reel */
+  .reel-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .modo { display: grid; grid-template-columns: 1fr 1fr; background: #fff; border-radius: var(--radio); padding: 5px; gap: 5px; }
+  .modo button { border: 0; border-radius: 8px; padding: 11px; background: transparent; font: 15px "DER Sub", sans-serif; color: var(--oscuro); cursor: pointer; }
+  .modo button.on { background: var(--oscuro); color: #fff; box-shadow: inset 0 -3px 0 var(--naranja); }
+  .tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .tpl { position: relative; display: flex; flex-direction: column; gap: 6px; text-align: left; padding: 12px; border-radius: 10px; border: 2px solid transparent;
+    background: #262626; color: #f0f0f0; cursor: pointer; font: inherit; min-height: 150px; }
+  .tpl.on { border-color: var(--naranja); }
+  .tpl-n { font: 14px "DER Titulo", sans-serif; text-transform: uppercase; letter-spacing: .03em; line-height: 1.2; }
+  .tpl-n em { font: 10px "DER Sub", sans-serif; text-transform: none; background: var(--naranja); color: #fff; padding: 1px 6px; border-radius: 4px; font-style: normal; vertical-align: middle; }
+  .tpl-d { font-size: 12.5px; color: #b5b5b5; line-height: 1.35; flex: 1; }
+  .tpl-tl { display: flex; gap: 2px; height: 14px; }
+  .tpl-tl i { background: var(--naranja); border-radius: 2px; min-width: 3px; }
+  .tpl-tl i.b { background: #f0f0f0; }
+  .tpl-m { font: 11.5px "DER Sub", sans-serif; color: #8f8f8f; }
+  .tpl-x { position: absolute; top: 6px; right: 8px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: #3a3a3a; color: #fff; font-size: 16px; }
+  .tpl-elegida { margin-top: 16px; padding: 12px 14px; background: var(--claro); border-left: 4px solid var(--naranja); border-radius: 6px; display: grid; gap: 2px; }
+  .tpl-elegida b { font: 15px "DER Sub", sans-serif; }
+  .tpl-elegida span { font-size: 13px; color: var(--texto-suave); }
 </style>
 </head>
 <body>
@@ -252,6 +272,29 @@
 
   <!-- REELS -->
   <section class="panel" id="reels">
+    <div class="reel-col">
+    <div class="modo" role="tablist">
+      <button type="button" class="on" data-modo="libre" role="tab">Desde cero</button>
+      <button type="button" data-modo="plantilla" role="tab">Con plantilla</button>
+    </div>
+    <form id="fReelTpl" hidden>
+      <h2>Plantillas de reel</h2>
+      <div class="tpl-grid" id="tplGrid"><p class="hint">Cargando…</p></div>
+      <div id="tplForm" hidden>
+        <div class="tpl-elegida" id="tplElegida"></div>
+        <div id="tplCampos"></div>
+        <label>Videos y fotos <small>— llenan los espacios en el orden en que los subas</small></label>
+        <div class="drop" data-input="tplIn">Arrastrá videos y fotos acá o hacé clic</div>
+        <input type="file" id="tplIn" accept="video/*,image/*" multiple hidden>
+        <div class="thumbs" id="tplThumbs"></div>
+        <p class="hint" id="tplCuenta"></p>
+        <label>Formato</label>
+        <select name="formato"><option value="historia">9:16 · Reel / historia</option><option value="post">4:5 · Post</option><option value="cuadrado">1:1 · Cuadrado</option></select>
+        <input type="hidden" name="plantilla" id="tplKey">
+        <button class="btn" type="submit">Crear reel con la plantilla</button>
+        <p class="hint">Después se edita igual que cualquier reel: recortar, cambiar textos, música, filtros…</p>
+      </div>
+    </form>
     <form id="fReel">
       <h2>Reel</h2>
       <label>Videos (y fotos) <small>— en el orden en que van</small></label>
@@ -299,6 +342,7 @@
       <label class="check"><input type="checkbox" name="marca_agua" value="1" checked> Logo chico arriba durante el reel</label>
       <button class="btn" type="submit">Generar reel</button>
     </form>
+    </div>
     <div class="resultado" id="rReel"><div class="vacio">El reel aparece acá.</div></div>
   </section>
 
@@ -415,10 +459,11 @@ if (location.protocol === "file:") {
   throw new Error("abierto como archivo");
 }
 const $ = (s, el = document) => el.querySelector(s);
-const files = { fotosIn: [], reelIn: [], carIn: [] };
+const files = { fotosIn: [], reelIn: [], carIn: [], tplIn: [] };
 
 
 function renderThumbs(id) {
+  if (id === "tplIn") setTimeout(contarEspacios);
   const box = $("#" + id.replace(/In$/, "Thumbs"));
   box.innerHTML = "";
   files[id].forEach((f, i) => {
@@ -757,6 +802,70 @@ async function abrirDesdeUrl(u) {
   const s = await (await fetch("/api/trabajo/" + id)).json().catch(() => null);
   if (s && s.tipo) seguirTrabajo(id, s.tipo);
 }
+
+// --- Plantillas de reel ---------------------------------------------------------------
+let PLANTILLAS = [], TPL = null;
+document.querySelectorAll(".modo button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".modo button").forEach(x => x.classList.toggle("on", x === b));
+  $("#fReel").hidden = b.dataset.modo !== "libre";
+  $("#fReelTpl").hidden = b.dataset.modo !== "plantilla";
+  if (b.dataset.modo === "plantilla") cargarPlantillas();
+});
+async function cargarPlantillas() {
+  const { plantillas } = await (await fetch("/api/plantillas-reel")).json();
+  PLANTILLAS = plantillas;
+  const tot = Math.max(...plantillas.map(t => t.duracion));
+  $("#tplGrid").innerHTML = plantillas.map(t => `<button type="button" class="tpl${TPL && TPL.key === t.key ? " on" : ""}" data-k="${t.key}">
+      <span class="tpl-n">${t.nombre}${t.propia ? ' <em>Mía</em>' : ""}</span>
+      <span class="tpl-d">${t.descripcion}</span>
+      <span class="tpl-tl">${t.espacios.map((s, i) => `<i style="flex:${s}" class="${i % 2 ? "b" : ""}"></i>`).join("")}</span>
+      <span class="tpl-m">${t.espacios.length} espacio${t.espacios.length > 1 ? "s" : ""} · ${String(t.duracion).replace(".", ",")} s</span>
+      ${t.propia ? `<span class="tpl-x" data-borrar="${t.key}" title="Borrar plantilla">×</span>` : ""}
+    </button>`).join("");
+  $("#tplGrid").querySelectorAll(".tpl").forEach(b => b.onclick = async e => {
+    if (e.target.dataset.borrar) {
+      if (!confirm("¿Borrar esta plantilla?")) return;
+      await fetch("/api/plantillas-reel/" + encodeURIComponent(e.target.dataset.borrar), { method: "DELETE" });
+      TPL = null; $("#tplForm").hidden = true; return cargarPlantillas();
+    }
+    elegirPlantilla(PLANTILLAS.find(t => t.key === b.dataset.k));
+  });
+}
+function elegirPlantilla(t) {
+  TPL = t;
+  $("#tplKey").value = t.key;
+  $("#tplGrid").querySelectorAll(".tpl").forEach(b => b.classList.toggle("on", b.dataset.k === t.key));
+  $("#tplElegida").innerHTML = `<b>${t.nombre}</b><span>${t.descripcion}</span>`;
+  $("#tplCampos").innerHTML = t.campos.map(c => `<label>${c.nombre}${c.key === "titulo" ? " <small>— *entre asteriscos* en naranja</small>" : ""}</label>
+    <input type="text" name="campo_${c.key}" placeholder="${c.ejemplo.replace(/"/g, "&quot;")}" value="">`).join("") +
+    (t.campos.length ? '<p class="hint">Si dejás un campo vacío, ese texto no aparece.</p>' : "");
+  $("#tplForm").hidden = false;
+  contarEspacios();
+  $("#tplForm").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function contarEspacios() {
+  if (!TPL) return;
+  const n = files.tplIn.length, e = TPL.espacios.length;
+  $("#tplCuenta").textContent = !n ? `Esta plantilla tiene ${e} espacio${e > 1 ? "s" : ""}.`
+    : n === e ? `Perfecto: ${n} archivos para ${e} espacios.`
+    : n < e ? `Subiste ${n} de ${e}: se usan los primeros ${n} espacios.`
+    : `Subiste ${n} para ${e} espacios: los que sobran siguen con el estilo del último.`;
+}
+$("#fReelTpl").onsubmit = async e => {
+  e.preventDefault();
+  const box = $("#rReel"), btn = $("button[type=submit]", e.target);
+  if (!TPL) return showError(box, "Elegí una plantilla.");
+  if (!files.tplIn.length) return showError(box, "Subí al menos un video o una foto.");
+  const fd = new FormData(e.target);
+  btn.disabled = true;
+  box.innerHTML = progresoHTML("tplEstado", "Subiendo archivos…");
+  try {
+    (await subirArchivos(files.tplIn, t => $("#tplEstado").textContent = t)).forEach(ref => fd.append("archivos_subidos", ref));
+    const r = await fetch("/api/reel/plantilla", { method: "POST", body: fd }), j = await r.json();
+    if (!r.ok) return showError(box, j.error);
+    seguirTrabajo(j.job, "reel");
+  } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
+};
 
 let ESTADO = { logos: [] };
 const logoSrc = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");

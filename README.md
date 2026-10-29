@@ -120,6 +120,16 @@ Pestaña **Carrusel**: subís fotos y videos en el orden en que van (hasta 20).
 - Los videos salen en 4:5 o 1:1, con el logo chico arriba y su audio original; los horizontales van sobre el mismo video desenfocado. Máximo de segundos configurable (Instagram admite hasta 60).
 - **Descargar todo** baja un .zip numerado (`DER-carrusel-01`, `-02`…); **Compartir todo** lo manda directo desde el celular si el sistema lo permite.
 
+### Plantillas de reel
+
+En **Reels → Con plantilla** hay 8 plantillas de DER: resumen de evento, antes y después, detrás de escena,
+anuncio / lanzamiento, testimonio, cuenta regresiva, top 3 y fotos al ritmo.
+- Cada una tiene **espacios** para tus clips (duración al ritmo de la música, filtro, animación, transición) y
+  **textos con campos** (título, fecha, lugar…). Si un campo queda vacío, ese texto no aparece.
+- Los archivos llenan los espacios en el orden en que los subís; si sobran, siguen con el estilo del último.
+- El reel que sale se edita como cualquier otro. Desde el editor, **Guardar como plantilla** convierte cualquier
+  reel en una plantilla propia (aparece con la etiqueta *Mía*; se guarda en `brand/plantillas/`).
+
 ### Editor de reels (estilo CapCut)
 
 Debajo del reel, **Editar reel** abre el editor a pantalla completa:

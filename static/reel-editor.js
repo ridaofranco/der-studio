@@ -385,7 +385,7 @@ const ReelEditor = (() => {
         ["agregar", "agregar", "Agregar"], ["formato", "formato", "Formato"], ["musica", "musica", "Música"],
         ["textos", "texto", "Texto"], ["stickers", "logo", "Stickers"], ["ritmo", "velocidad", "Al ritmo"],
         ["voz", "voz", "Voz en off"], ["titulo", "texto", "Título"], ["marca", "logo", "Logo y cierre"],
-        ["todo", "filtro", "Filtro a todo"],
+        ["todo", "filtro", "Filtro a todo"], ["guardar-plantilla", "duplicar", "Guardar como plantilla"],
       ];
       if (selT >= 0 || selS >= 0) {
         const nav = $(".rx-tools");
@@ -467,6 +467,7 @@ const ReelEditor = (() => {
     function action(k) {
       const c = p.clips[sel];
       if (k === "agregar") return addClips();
+      if (k === "guardar-plantilla") return guardarPlantilla();
       if (k === "duplicar") { p.clips.splice(sel + 1, 0, { ...clone(c), id: uid() }); sel++; toast("Clip duplicado."); return commit(); }
       if (k === "borrar") {
         if (p.clips.length === 1) return toast("El reel tiene que tener al menos un clip.");
@@ -832,6 +833,20 @@ const ReelEditor = (() => {
         p.opciones.voz = j.voz; p.voz_url = j.url;
         toast(`Voz agregada (${fmt(j.segundos)} s).`); commit(); openTool("voz");
       } catch (err) { toast("No se pudo agregar la voz: " + err.message); }
+    }
+
+    // --- guardar este reel como plantilla propia ---------------------------------------
+    async function guardarPlantilla() {
+      const nombre = prompt("Nombre de la plantilla (cada clip queda como un espacio con su estilo, textos y stickers incluidos):",
+        p.plantilla ? p.plantilla + " (mía)" : "Mi plantilla");
+      if (!nombre) return;
+      try {
+        const r = await fetch("/api/reel/guardar-plantilla", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lote, nombre, proyecto: p }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error);
+        toast(`Guardada. La encontrás en Reels → Con plantilla.`);
+      } catch (err) { toast("No se pudo guardar: " + err.message); }
     }
 
     // --- agregar clips ----------------------------------------------------------------

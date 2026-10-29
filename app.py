@@ -22,7 +22,7 @@ import shutil
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
-from der import aviso, brand, carrusel, compose, graphics, reels, updater
+from der import aviso, brand, carrusel, compose, graphics, plantillas, reels, updater
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "salidas"
@@ -469,6 +469,57 @@ def api_reel_cuadro():
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         return jsonify(error=str(e)), 400
+
+
+@app.get("/api/plantillas-reel")
+def api_plantillas_reel():
+    return jsonify(plantillas=plantillas.catalog(ROOT))
+
+
+@app.delete("/api/plantillas-reel/<path:key>")
+def api_borrar_plantilla_reel(key):
+    if not key.startswith("mia:"):
+        return jsonify(error="Las plantillas de DER no se pueden borrar."), 400
+    plantillas.delete_user(ROOT, key)
+    return jsonify(plantillas=plantillas.catalog(ROOT))
+
+
+@app.post("/api/reel/plantilla")
+def api_reel_desde_plantilla():
+    """Reel a partir de una plantilla: los archivos llenan los espacios en el orden subido."""
+    inputs = _save_uploads("archivos")
+    if not inputs:
+        return jsonify(error="Subí al menos un video o una foto."), 400
+    f = request.form
+    campos = {k[6:]: v.strip() for k, v in f.items() if k.startswith("campo_")}
+    lote = _job_dir("reel")
+    fuentes = lote / "fuentes"
+    fuentes.mkdir()
+    srcs = []
+    for i, p in enumerate(inputs):
+        dst = fuentes / f"{i:02d}_{p.name}"
+        shutil.move(str(p), dst)
+        srcs.append(dst)
+    try:
+        project = plantillas.build(ROOT, f.get("plantilla", ""), campos, srcs,
+                                   f.get("formato") if f.get("formato") in reels.FORMATS else "historia")
+        project = reels.clean_project(project, fuentes)
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+    return jsonify(job=_start_reel(lote, project, len(srcs), previews=True))
+
+
+@app.post("/api/reel/guardar-plantilla")
+def api_reel_guardar_plantilla():
+    data = request.get_json(silent=True) or {}
+    d = _reel_lote(data)
+    try:
+        project = reels.clean_project(data.get("proyecto") or {}, d / "fuentes")
+        slug = plantillas.save_user(ROOT, str(data.get("nombre", "")), project)
+    except (ValueError, TypeError) as e:
+        return jsonify(error=str(e)), 400
+    return jsonify(ok=True, key="mia:" + slug)
 
 
 @app.post("/api/reel/ritmo")
