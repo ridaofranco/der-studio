@@ -113,6 +113,8 @@
           <div class="ed-logo">
             <label>Cambiar logo</label>
             <select data-p="logo"></select>
+            <button data-a="replicar" class="ed-replicar">Replicar en todas las piezas</button>
+            <p class="ed-rep-hint">Mismo logo, mismo tamaño y mismo lugar en el resto de las piezas de este lote.</p>
           </div>
           <div class="ed-color">
             <label>Color <small class="ed-colorhint"></small></label>
@@ -140,7 +142,7 @@
     return wrap;
   }
 
-  async function open(design, { logos = [], onSave } = {}) {
+  async function open(design, { logos = [], onSave, siblings = [], onSaveOther } = {}) {
     await loadFonts();
     const root = ui();
     const $ = s => root.querySelector(s);
@@ -291,6 +293,53 @@
       back() { active().sendToBack(); snapshot(); },
       del() { canvas.getActiveObjects().forEach(o => canvas.remove(o)); canvas.discardActiveObject(); canvas.requestRenderAll(); },
       cancel() { close(); },
+
+      // Replicar el logo elegido en las demás piezas del lote: mismo archivo, tamaño, posición y opacidad.
+      // Si la otra pieza ya tiene ese logo (o su logo principal), se reemplaza; no queda duplicado.
+      async replicar() {
+        const o = active();
+        if (!o || !o.logo) return;
+        const others = siblings.filter(d => d !== design);
+        const btn = $(".ed-replicar"), hint = $(".ed-rep-hint");
+        if (!others.length || !onSaveOther) { hint.textContent = "No hay otras piezas en este lote."; return; }
+        const principal = canvas.getObjects().find(x => x.logo) === o;
+        const spec = { key: o.logo, src: o.getSrc(), left: o.left, top: o.top, scaleX: o.scaleX, scaleY: o.scaleY,
+          angle: o.angle || 0, opacity: o.opacity ?? 1, name: o.name || "Logo", W: design.W, H: design.H, cy: o.getCenterPoint().y };
+        btn.disabled = true;
+        let ok = 0;
+        try {
+          for (const [k, d] of others.entries()) {
+            hint.textContent = `Aplicando en ${k + 1} de ${others.length}…`;
+            const el = document.createElement("canvas");
+            const c = new fabric.StaticCanvas(el, { width: d.W, height: d.H, enableRetinaScaling: false });
+            await build(c, d);
+            const logosT = c.getObjects().filter(x => x.logo);
+            let rm = logosT.filter(x => x.logo === spec.key);
+            if (!rm.length && principal && logosT.length) rm = [logosT[0]];
+            const idx = rm.length ? c.getObjects().indexOf(rm[0]) : -1;
+            rm.forEach(x => c.remove(x));
+            const img = await loadImage(spec.src);
+            const k2 = d.W / spec.W;
+            // otro formato (post / historia): si el logo está en la mitad de abajo, se mantiene la distancia al borde de abajo
+            let top = spec.top * k2;
+            if (d.H !== spec.H && spec.cy > spec.H / 2) top = d.H - (spec.H - spec.top) * k2;
+            img.set({ left: spec.left * k2, top, scaleX: spec.scaleX * k2, scaleY: spec.scaleY * k2, angle: spec.angle,
+              opacity: spec.opacity, name: spec.name, logo: spec.key });
+            c.add(img);
+            if (idx >= 0) c.moveTo(img, idx);
+            c.renderAll();
+            d.fabric = c.toJSON(EXTRA);
+            delete d.fabric.backgroundImage;
+            const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+            c.dispose();
+            await onSaveOther(d, blob);
+            ok++;
+          }
+          hint.textContent = `Listo: el logo quedó igual en ${ok} pieza${ok > 1 ? "s" : ""} más. Tocá Guardar para esta.`;
+        } catch (err) {
+          hint.textContent = `Se aplicó en ${ok} de ${others.length}. Error: ${err.message || err}`;
+        } finally { btn.disabled = false; }
+      },
       async save() {
         canvas.discardActiveObject(); canvas.renderAll();
         const z = ed.zoom;

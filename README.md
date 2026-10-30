@@ -66,6 +66,7 @@ Tocá cualquier imagen generada y se abre el editor:
 - **Resaltar palabras**: mientras escribís, seleccioná las palabras y tocá un color.
 - **Colores**: solo los de la marca (naranja, gris oscuro, gris claro, blanco).
 - **Logo**: cambiarlo por otra versión o agregar otro (por ejemplo, el del cliente).
+- **Replicar en todas las piezas** (con el logo elegido): lo pone igual (archivo, tamaño, lugar) en el resto del lote; si ya había un logo, lo reemplaza.
 - **Agregar**: texto, barra naranja, esquinero, grilla de puntos.
 - Duplicar, traer al frente, enviar atrás, eliminar, opacidad.
 - **Deshacer** / **Rehacer** (Ctrl+Z / Ctrl+Y). Flechas del teclado para mover de a 1 px (con Shift, de a 10).

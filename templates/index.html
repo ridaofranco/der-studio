@@ -202,6 +202,8 @@
   .tpl-elegida { margin-top: 16px; padding: 12px 14px; background: var(--claro); border-left: 4px solid var(--naranja); border-radius: 6px; display: grid; gap: 2px; }
   .tpl-elegida b { font: 15px "DER Sub", sans-serif; }
   .tpl-elegida span { font-size: 13px; color: var(--texto-suave); }
+  .ed-replicar { width: 100%; margin-top: 8px; background: var(--oscuro) !important; color: #fff !important; border-color: var(--oscuro) !important; }
+  .ed-rep-hint { font-size: 12px; color: var(--texto-suave); margin: 4px 0 0; }
 </style>
 </head>
 <body>
@@ -587,6 +589,12 @@ async function mostrarPiezas(box, lote, disenos) {
     <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
       <div class="img"><img src="${d.final}" alt="" loading="lazy"></div>
       <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a> <a download="${d.name}.jpg" class="dl" href="${d.final}">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
+  const pintarOtra = (i, url) => {
+    const c = box.querySelectorAll(".pieza")[i];
+    if (!c) return;
+    c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+    c.querySelector("a.dl").href = url;
+  };
   box.querySelectorAll(".pieza").forEach((c, i) => {
     const d = disenos[i];
     const pintar = url => {
@@ -598,6 +606,8 @@ async function mostrarPiezas(box, lote, disenos) {
     c.querySelector(".img").onclick = () => DEREditor.open(d, {
       logos: ESTADO.logos,
       onSave: async (dd, blob) => pintar(await guardarPieza(lote, dd, blob)),
+      siblings: disenos,
+      onSaveOther: async (dd, blob) => pintarOtra(disenos.indexOf(dd), await guardarPieza(lote, dd, blob)),
     });
   });
 }
@@ -646,11 +656,20 @@ async function mostrarCarrusel(box, lote, slides) {
   const finales = slides.map(sl => sl.tipo === "video"
     ? [sl.archivo, sl.archivo.split("/").pop(), "video/mp4"]
     : [sl.diseno.final.split("?")[0], sl.diseno.name + ".jpg", "image/jpeg"]);
+  const fotos = slides.filter(sl => sl.tipo !== "video").map(sl => sl.diseno);
   slides.forEach((sl, i) => {
     if (sl.tipo === "video") return;
     const d = sl.diseno, c = cards[i];
     c.querySelector(".img").onclick = () => DEREditor.open(d, {
       logos: ESTADO.logos,
+      siblings: fotos,
+      onSaveOther: async (dd, blob) => {
+        const j = slides.findIndex(x => x.diseno === dd), url = await guardarPieza(lote, dd, blob);
+        if (j < 0) return;
+        cards[j].querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
+        cards[j].querySelector("a.dl").href = url;
+        finales[j] = [url.split("?")[0], dd.name + ".jpg", "image/jpeg"];
+      },
       onSave: async (dd, blob) => {
         const url = await guardarPieza(lote, dd, blob);
         c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
