@@ -57,11 +57,32 @@ def _unzip_font_archives() -> None:
         marker.touch()
 
 
+NECESARIAS = "ÁÉÍÓÚÑáéíóúñ¿¡0123456789"
+INCOMPLETAS: dict[str, str] = {}   # archivo -> letras que le faltan (se llena al buscar fuentes)
+
+
+def _faltantes(path: Path) -> str:
+    """Letras del castellano que no tiene la fuente (las versiones DEMO no traen tildes ni ñ)."""
+    try:
+        f = ImageFont.truetype(str(path), 48)
+    except OSError:
+        return NECESARIAS
+    vacio = f.getmask("\uffff")
+    sig = lambda c: (f.getmask(c).size, bytes(f.getmask(c)))  # noqa: E731
+    nd = (vacio.size, bytes(vacio))
+    return "".join(c for c in NECESARIAS if f.getmask(c).size == (0, 0) or sig(c) == nd)
+
+
 def _find_font(keyword: str, prefer: tuple[str, ...] = ()) -> Path | None:
-    candidates = [
-        p for p in FONTS_DIR.iterdir()
-        if p.suffix.lower() in (".ttf", ".otf") and keyword in p.name.lower()
-    ]
+    candidates = []
+    for p in FONTS_DIR.iterdir():
+        if p.suffix.lower() not in (".ttf", ".otf") or keyword not in p.name.lower():
+            continue
+        falta = _faltantes(p)
+        if falta:
+            INCOMPLETAS[p.name] = falta   # no se usa: saldrían huecos en vez de letras
+            continue
+        candidates.append(p)
     if not candidates:
         return None
     for weight in prefer:
@@ -83,6 +104,7 @@ class FontSet:
 @lru_cache(maxsize=1)
 def fonts() -> FontSet:
     FONTS_DIR.mkdir(parents=True, exist_ok=True)
+    INCOMPLETAS.clear()
     _unzip_font_archives()
     missing = []
 
@@ -93,7 +115,8 @@ def fonts() -> FontSet:
 
     subtitle = _find_font("articulat", ("demibold", "semibold", "medium", "bold", "regular"))
     if not subtitle:
-        missing.append("Articulat CF (subtítulos)")
+        demo = any("articulat" in n.lower() for n in INCOMPLETAS)
+        missing.append("Articulat CF (subtítulos)" + (" — la que subiste es DEMO, sin tildes ni ñ" if demo else ""))
         subtitle = FONTS_DIR / "Jost-Medium.ttf"
 
     body = _find_font("jost", ("regular", "book")) or FONTS_DIR / "Jost-Regular.ttf"
@@ -212,6 +235,7 @@ def status() -> dict:
     fs = fonts()
     return {
         "fuentes_faltantes": fs.missing,
+        "fuentes_incompletas": INCOMPLETAS.copy(),
         "logo_oficial": has_real_logo(),
         "logos": list_logos(),
         "titulo": fs.title.name,

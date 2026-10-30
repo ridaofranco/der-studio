@@ -967,7 +967,9 @@ async function cargarEstado() {
   $("#kitFuentes").innerHTML = `
     <p>${st(!miss.includes("Netron"))} Títulos: <b style="font-family:'DER Titulo'">NETRON</b> <small>(${s.titulo})</small></p>
     <p>${st(!miss.includes("Articulat"))} Subtítulos: <b style="font-family:'DER Sub'">Articulat CF</b> <small>(${s.subtitulo})</small></p>
-    <p>${st(true)} Cuerpo: <span style="font-family:'DER Cuerpo'">Jost</span> <small>(${s.cuerpo})</small></p>`;
+    <p>${st(true)} Cuerpo: <span style="font-family:'DER Cuerpo'">Jost</span> <small>(${s.cuerpo})</small></p>` +
+    Object.entries(s.fuentes_incompletas || {}).map(([n, f]) => `<p class="falta" style="font-size:13px">⚠ <b>${n}</b> no se usa: es una versión incompleta
+      (DEMO) y le faltan <b>${f}</b>. Con esas letras saldrían huecos. Subí la versión con licencia completa.</p>`).join("");
   $("#kitMusica").innerHTML = s.musica.length ? s.musica.map(m => `<p>♪ ${m}</p>`).join("") : '<p class="hint">Sin temas propios: se usa música genérica generada.</p>';
   const sel = $("#musicaSel");
   sel.querySelectorAll("option[data-propia]").forEach(o => o.remove());
@@ -979,7 +981,8 @@ $("#fKit").onsubmit = async e => {
   e.preventDefault();
   const r = await fetch("/api/brand", { method: "POST", body: new FormData(e.target) });
   const j = await r.json();
-  alert(r.ok ? "Subido: " + j.guardados.join(", ") : j.error);
+  const inc = Object.keys((j.estado || {}).fuentes_incompletas || {}).filter(n => (j.guardados || []).includes(n));
+  alert(r.ok ? "Subido: " + j.guardados.join(", ") + (inc.length ? "\n\nOjo: " + inc.join(", ") + " es una versión DEMO sin tildes ni ñ. No se va a usar." : "") : j.error);
   e.target.reset(); cargarEstado();
 };
 cargarEstado();
