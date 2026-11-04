@@ -12,6 +12,9 @@
  * copiar estilo (como la brocha de Canva).
  */
 (function () {
+  // Las piezas se diseñan en 1080 px y se entregan al doble (igual que el servidor, compose.SALIDA):
+  // Fabric vuelve a dibujar textos, formas y fotos a ese tamaño, no agranda la imagen.
+  const SALIDA = 2;
   const BRAND = { naranja: "#ff5c00", oscuro: "#333333", claro: "#f0f0f0", blanco: "#ffffff" };
   // paleta de los patrones de la marca (para las formas DER)
   const PALETA = { naranja: "#ff5c00", "naranja claro": "#f58b22", oscuro: "#333333", negro: "#1b1b1b", gris: "#8a8889", claro: "#f0f0f0" };
@@ -230,7 +233,7 @@
     const c = new fabric.StaticCanvas(el, { width: design.W, height: design.H, enableRetinaScaling: false });
     await build(c, design);
     if (transparente) { c.backgroundColor = null; c.renderAll(); }
-    const url = png ? c.toDataURL({ format: "png" }) : c.toDataURL({ format: "jpeg", quality: 0.93 });
+    const url = png ? c.toDataURL({ format: "png", multiplier: SALIDA }) : c.toDataURL({ format: "jpeg", quality: 1, multiplier: SALIDA });
     c.dispose();
     return (await fetch(url)).blob();
   }
@@ -1319,7 +1322,7 @@
             d.fabric = c.toJSON(EXTRA);
             delete d.fabric.backgroundImage;
             if (c.fondoFx) d.fabric.fondo_fx = c.fondoFx;
-            const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+            const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 1, multiplier: SALIDA }))).blob();
             c.dispose();
             await onSaveOther(d, blob);
             ok++;
@@ -1343,8 +1346,12 @@
 
     async function exportar() {
       canvas.discardActiveObject(); canvas.renderAll();
+      // se exporta sin el zoom de pantalla, al tamaño exacto de entrega (W × SALIDA)
       const z = ed.zoom;
-      const url = canvas.toDataURL({ format: "jpeg", quality: 0.93, multiplier: 1 / z });
+      canvas.setDimensions({ width: design.W, height: design.H }); canvas.setZoom(1);
+      const url = canvas.toDataURL({ format: "jpeg", quality: 1, multiplier: SALIDA });
+      canvas.setDimensions({ width: Math.round(design.W * z), height: Math.round(design.H * z) }); canvas.setZoom(z);
+      canvas.calcOffset(); canvas.requestRenderAll();
       design.fabric = canvas.toJSON(EXTRA);
       delete design.fabric.backgroundImage;
       if (canvas.fondoFx) design.fabric.fondo_fx = canvas.fondoFx;
@@ -1507,7 +1514,7 @@
     dst.fabric = c.toJSON(EXTRA);
     delete dst.fabric.backgroundImage;
     if (src.fabric.fondo_fx) dst.fabric.fondo_fx = src.fabric.fondo_fx;
-    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 1, multiplier: SALIDA }))).blob();
     c.dispose();
     return blob;
   }
@@ -1539,7 +1546,7 @@
     c.renderAll();
     dst.fabric = c.toJSON(EXTRA);
     delete dst.fabric.backgroundImage;
-    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 1, multiplier: SALIDA }))).blob();
     c.dispose();
     return blob;
   }

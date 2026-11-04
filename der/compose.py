@@ -17,17 +17,33 @@ from PIL import Image, ImageDraw
 from . import brand, graphics
 
 FS_MULT, FS_FRACTION = 1.13, 0.222
+# Las piezas se diseñan en 1080 px de ancho y se entregan al doble (2160): textos, fotos y formas se
+# dibujan de nuevo a ese tamaño (no se agranda la imagen), así quedan nítidas en el celular y en Instagram.
+SALIDA = 2
+_PX = ("x", "y", "w", "h", "size", "strokeWidth", "rx", "radius")
+
+
+def _escalar(layer: dict, k: float) -> dict:
+    return {**layer, **{c: layer[c] * k for c in _PX if isinstance(layer.get(c), (int, float))}, "_k": k}
 BASELINE = FS_MULT * (1 - FS_FRACTION)
 
 
-def _image_for(src: str) -> Image.Image:
-    """Resuelve en el servidor las mismas URLs que usa el editor (logos y elementos)."""
+def _image_for(src: str, k: float = 1) -> Image.Image:
+    """Resuelve en el servidor las mismas URLs que usa el editor (logos y elementos).
+    Los elementos dibujados (esquineros, rayas, puntos…) se dibujan de nuevo a la escala de salida."""
     u = urlparse(src)
     if u.path.startswith("/logos/ver/"):
         kind, _, value = unquote(u.path[len("/logos/ver/"):]).partition(":")
         return brand.logo_file(value) if kind == "file" else brand.logo(value or "on_dark")
     if u.path.startswith("/elemento/"):
-        return graphics.element_from_query(Path(u.path).stem, {k: v[0] for k, v in parse_qs(u.query).items()})
+        q = {c: v[0] for c, v in parse_qs(u.query).items()}
+        if k != 1:
+            for c in ("l", "g", "gap", "r", "w", "h"):
+                if c in q:
+                    q[c] = str(round(float(q[c]) * k))
+            if "w" not in q and Path(u.path).stem == "difuminado":
+                q.update(w=str(round(800 * k)), h=str(round(800 * k)))
+        return graphics.element_from_query(Path(u.path).stem, q)
     if u.path.startswith("/patron/"):
         return Image.open(brand.PATRONES_DIR / Path(u.path).name).convert("RGBA")
     raise ValueError(f"No sé componer la imagen {src}")
@@ -143,9 +159,9 @@ def _photo(layer: dict, lote: Path) -> Image.Image:
     return out
 
 
-def compose(design: dict, base_path: Path) -> Image.Image:
-    """Devuelve la pieza terminada (RGB) a tamaño completo."""
-    W, H = design["W"], design["H"]
+def compose(design: dict, base_path: Path, escala: float = 1) -> Image.Image:
+    """Devuelve la pieza terminada (RGB), a `escala` veces su tamaño de diseño."""
+    W, H = round(design["W"] * escala), round(design["H"] * escala)
     img = Image.new("RGBA", (W, H), design.get("bg") or brand.LIGHT)
     base = Image.open(base_path).convert("RGBA")
     if base.size != (W, H):
@@ -153,6 +169,7 @@ def compose(design: dict, base_path: Path) -> Image.Image:
     img = Image.alpha_composite(img, base)
     d = ImageDraw.Draw(img)
     for layer in design["layers"]:
+        layer = _escalar(layer, escala) if escala != 1 else layer
         t = layer["type"]
         if t == "text":
             if layer.get("angle") or layer.get("stroke") or layer.get("opacity", 1) < 1:
@@ -177,17 +194,19 @@ def compose(design: dict, base_path: Path) -> Image.Image:
                 from PIL import ImageFilter
                 sh = Image.new("RGBA", tile.size, (0, 0, 0, 0))
                 sh.putalpha(tile.getchannel("A").point(lambda a: int(a * 0.3)))
-                pad = 40
+                kk = layer.get("_k", 1)
+                pad = int(40 * kk)
                 big = Image.new("RGBA", (sh.width + 2 * pad, sh.height + 2 * pad), (0, 0, 0, 0))
                 big.paste(sh, (pad, pad))
-                img = _place(img, big.filter(ImageFilter.GaussianBlur(14)), layer["x"] - pad + 10, layer["y"] - pad + 16, layer.get("angle", 0))
+                img = _place(img, big.filter(ImageFilter.GaussianBlur(14 * kk)), layer["x"] - pad + 10 * kk, layer["y"] - pad + 16 * kk,
+                             layer.get("angle", 0))
             img = _place(img, tile, layer["x"] - sw / 2, layer["y"] - sw / 2, layer.get("angle", 0), layer.get("opacity", 1.0))
             d = ImageDraw.Draw(img)
         elif t == "photo":
             img = _place(img, _photo(layer, base_path.parent), layer["x"], layer["y"], layer.get("angle", 0), layer.get("opacity", 1.0))
             d = ImageDraw.Draw(img)
         else:
-            el = _image_for(layer["src"]).convert("RGBA").resize((max(1, round(layer["w"])), max(1, round(layer["h"]))),
+            el = _image_for(layer["src"], layer.get("_k", 1)).convert("RGBA").resize((max(1, round(layer["w"])), max(1, round(layer["h"]))),
                                                                  Image.LANCZOS)
             img = _place(img, el, layer["x"], layer["y"], layer.get("angle", 0), layer.get("opacity", 1.0))
             d = ImageDraw.Draw(img)
@@ -197,5 +216,10 @@ def compose(design: dict, base_path: Path) -> Image.Image:
 def save_final(design: dict, out_dir: Path) -> Path:
     """Escribe <nombre>.jpg (la pieza que se descarga) junto a su base."""
     out = out_dir / f"{design['name']}.jpg"
-    compose(design, out_dir / design["base_file"]).save(out, "JPEG", quality=93)
+    guardar_jpg(compose(design, out_dir / design["base_file"], SALIDA), out)
     return out
+
+
+def guardar_jpg(img: Image.Image, out: Path) -> None:
+    """JPG de entrega: calidad alta y sin reducir el color (los bordes del naranja y del texto quedan limpios)."""
+    img.convert("RGB").save(out, "JPEG", quality=95, subsampling=0, optimize=True)

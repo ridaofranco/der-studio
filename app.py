@@ -814,9 +814,16 @@ def api_guardar():
     name = secure_filename(request.form.get("nombre", ""))
     if not name:
         abort(400)
-    request.files["imagen"].save(d / f"{name}.jpg")
+    from PIL import Image as PILImage
+    img = PILImage.open(request.files["imagen"].stream)
     if request.form.get("capas"):
+        capas = json.loads(request.form["capas"])
+        # tamaño exacto de entrega (el zoom del editor puede dejarla 1 px corta)
+        meta = (round(capas.get("W", 0) * compose.SALIDA), round(capas.get("H", 0) * compose.SALIDA))
+        if all(meta) and img.size != meta:
+            img = img.convert("RGB").resize(meta, PILImage.LANCZOS)
         (d / f"{name}.json").write_text(request.form["capas"], encoding="utf-8")
+    compose.guardar_jpg(img, d / f"{name}.jpg")
     return jsonify(ok=True, url=_url(d / f"{name}.jpg"))
 
 
@@ -856,7 +863,7 @@ def api_pdf(lote):
         abort(404)
     imgs = [PILImage.open(d / f"{n}.jpg").convert("RGB") for n in names]
     out = d / "DER-piezas.pdf"
-    imgs[0].save(out, "PDF", save_all=True, append_images=imgs[1:], resolution=150)
+    imgs[0].save(out, "PDF", save_all=True, append_images=imgs[1:], resolution=150 * compose.SALIDA, quality=95)
     return send_from_directory(d, out.name, as_attachment=True)
 
 
@@ -888,9 +895,9 @@ def api_pieza_medio():
         img = graphics.load_photo(f.stream)
     except Exception:  # noqa: BLE001
         return jsonify(error="No pude abrir esa imagen."), 400
-    img.thumbnail((2400, 2400))
+    img.thumbnail((3200, 3200))
     dst = d / "medios" / f"{uuid.uuid4().hex[:10]}.jpg"
-    img.save(dst, "JPEG", quality=90)
+    img.save(dst, "JPEG", quality=92)
     return jsonify(url=_url(dst), w=img.width, h=img.height)
 
 

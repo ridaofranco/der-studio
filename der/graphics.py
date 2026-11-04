@@ -518,8 +518,8 @@ class Design:
                 f = capas / f"{key}.jpg"
                 if not f.exists():
                     im = img.copy()
-                    im.thumbnail((2000, 2000))
-                    im.convert("RGB").save(f, "JPEG", quality=90)
+                    im.thumbnail((3200, 3200))   # alcanza para una foto a lo ancho en la entrega al doble
+                    im.convert("RGB").save(f, "JPEG", quality=92)
             for l in self.layers:
                 if l.get("type") == "photo":
                     l["src_rel"] = f"capas/{l['ref']}.jpg"
