@@ -168,6 +168,17 @@
   .tpl-elegida { margin-top: 16px; padding: 12px 14px; background: var(--claro); border-left: 4px solid var(--naranja); border-radius: 6px; display: grid; gap: 2px; }
   .tpl-elegida b { font: 15px "DER Sub", sans-serif; }
   .tpl-elegida span { font-size: 13px; color: var(--texto-suave); }
+  /* páginas del lote */
+  .pieza { position: relative; }
+  .pg-n { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.65); color: #fff; font: 11px "DER Titulo", sans-serif; padding: 2px 7px; border-radius: 5px; }
+  .pg-menu { border: 0; background: var(--claro); width: 28px; height: 24px; border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; color: var(--oscuro); }
+  .pg-pop { position: absolute; right: 0; bottom: 34px; z-index: 20; background: #fff; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.22);
+    padding: 6px; display: flex; flex-direction: column; min-width: 190px; }
+  .pg-pop button { text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 7px; font: 14px "DER Cuerpo", sans-serif; cursor: pointer; color: var(--oscuro); }
+  .pg-pop button:hover:not(:disabled) { background: var(--claro); }
+  .pg-pop button:disabled { opacity: .35; cursor: default; }
+  .pg-sub { font: 11px "DER Sub", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave); padding: 8px 10px 2px; border-top: 1px solid var(--borde); margin-top: 4px; }
+  .pg-del { color: #b3261e !important; border-top: 1px solid var(--borde) !important; margin-top: 4px; }
 </style>
 </head>
 <body>
@@ -547,33 +558,104 @@ async function guardarPieza(lote, d, blob) {
   return (await r.json()).url + "?t=" + Date.now();
 }
 
+/** Piezas del lote = páginas (como en Canva): editar, duplicar, ordenar, cambiar de formato, descargar. */
 async function mostrarPiezas(box, lote, disenos) {
-  box.innerHTML = `<div class="acciones"><a class="prim" href="/api/zip/${lote}">Descargar todo (.zip)</a></div>
-    <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla: mover, cambiar textos, colores, el fondo o el logo.</p>
-    <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
-      <div class="img"><img src="${d.final}" alt="" loading="lazy"></div>
-      <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a> <a download="${d.name}.jpg" class="dl" href="${d.final}">Descargar</a></span></figcaption></figure>`).join("")}</div>`;
-  const pintarOtra = (i, url) => {
-    const c = box.querySelectorAll(".pieza")[i];
-    if (!c) return;
-    c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
-    c.querySelector("a.dl").href = url;
+  const guardarOrden = () => fetch("/api/pieza/orden", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lote, nombres: disenos.map(d => d.name) }) });
+  const api = async (url, body) => {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lote, ...body }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error || "No se pudo.");
+    return j;
   };
-  box.querySelectorAll(".pieza").forEach((c, i) => {
-    const d = disenos[i];
-    const pintar = url => {
-      c.querySelector(".img").innerHTML = `<img src="${url}" alt="">`;
-      c.querySelector("a.dl").href = url;
-    };
-    const sh = c.querySelector("a.share");
-    if (puedeCompartir) { sh.hidden = false; sh.onclick = ev => { ev.preventDefault(); compartir(c.querySelector("a.dl").href.split("?")[0], d.name + ".jpg", "image/jpeg"); }; }
-    c.querySelector(".img").onclick = () => DEREditor.open(d, {
-      logos: ESTADO.logos,
-      onSave: async (dd, blob) => pintar(await guardarPieza(lote, dd, blob)),
-      siblings: disenos,
-      onSaveOther: async (dd, blob) => pintarOtra(disenos.indexOf(dd), await guardarPieza(lote, dd, blob)),
-    });
+  const bajar = (blob, nombre) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nombre; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
+  const editar = i => DEREditor.open(disenos[i], {
+    logos: ESTADO.logos, lote, siblings: disenos,
+    onSave: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
+    onSaveOther: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
+    onNav: k => editar(k),
   });
+  function pintar(i) {
+    const c = box.querySelectorAll(".pieza")[i], d = disenos[i];
+    if (!c || !d) return;
+    c.querySelector(".img").innerHTML = `<img src="${d.final}" alt="">`;
+    c.querySelector("a.dl").href = d.final;
+  }
+  function render() {
+    box.innerHTML = `<div class="acciones"><a class="prim" href="/api/zip/${lote}">Descargar todo (.zip)</a>
+        <a href="/api/pdf/${lote}">Descargar PDF</a><a href="#" class="pg-blanco">+ Pieza en blanco</a></div>
+      <p class="hint" style="margin:-6px 0 14px">Tocá una imagen para editarla. El menú ⋯ de cada pieza: duplicar, ordenar, cambiar de formato y más.</p>
+      <div class="grid">${disenos.map((d, i) => `<figure class="pieza" data-i="${i}">
+        <div class="img"><img src="${d.final}" alt="" loading="lazy"><span class="pg-n">${i + 1}</span></div>
+        <figcaption><span>${d.name.replace("DER-", "")}</span><span class="acc"><a href="#" class="share" hidden>Compartir</a>
+          <a download="${d.name}.jpg" class="dl" href="${d.final}">Descargar</a><button type="button" class="pg-menu" aria-label="Más opciones">⋯</button></span></figcaption></figure>`).join("")}</div>`;
+    box.querySelector(".pg-blanco").onclick = async ev => {
+      ev.preventDefault();
+      const fmt = prompt("Formato de la pieza nueva: post, cuadrado o historia", disenos[0] ? disenos[0].fmt : "post");
+      if (!fmt) return;
+      try { const j = await api("/api/pieza/nueva", { formato: fmt.trim().toLowerCase() }); disenos.push(j.diseno); render(); editar(disenos.length - 1); }
+      catch (err) { alert(err.message); }
+    };
+    box.querySelectorAll(".pieza").forEach((c, i) => {
+      const d = disenos[i];
+      const sh = c.querySelector("a.share");
+      if (puedeCompartir) { sh.hidden = false; sh.onclick = ev => { ev.preventDefault(); compartir(d.final.split("?")[0], d.name + ".jpg", "image/jpeg"); }; }
+      c.querySelector(".img").onclick = () => editar(i);
+      c.querySelector(".pg-menu").onclick = ev => menu(ev.currentTarget, i);
+    });
+  }
+  function menu(btn, i) {
+    document.querySelectorAll(".pg-pop").forEach(x => x.remove());
+    const d = disenos[i];
+    const pop = document.createElement("div");
+    pop.className = "pg-pop";
+    const fmts = { post: "Post 4:5", cuadrado: "Post 1:1", historia: "Historia 9:16" };
+    pop.innerHTML = `<button data-m="editar">Editar</button><button data-m="dup">Duplicar</button>
+      <button data-m="izq" ${i === 0 ? "disabled" : ""}>← Mover antes</button><button data-m="der" ${i === disenos.length - 1 ? "disabled" : ""}>Mover después →</button>
+      <div class="pg-sub">Pasar a otro formato</div>
+      ${Object.entries(fmts).filter(([k]) => k !== d.fmt).map(([k, n]) => `<button data-m="fmt:${k}">${n}</button>`).join("")}
+      <div class="pg-sub">Descargar</div>
+      <button data-m="png">PNG</button><button data-m="pngt">PNG sin fondo</button>
+      <button data-m="del" class="pg-del">Eliminar pieza</button>`;
+    btn.closest("figure").appendChild(pop);
+    const cerrar = e => { if (!pop.contains(e.target) && e.target !== btn) { pop.remove(); document.removeEventListener("click", cerrar, true); } };
+    setTimeout(() => document.addEventListener("click", cerrar, true));
+    pop.querySelectorAll("[data-m]").forEach(b => b.onclick = async () => {
+      const m = b.dataset.m;
+      pop.remove();
+      try {
+        if (m === "editar") return editar(i);
+        if (m === "dup") {
+          const j = await api("/api/pieza/nueva", { desde: d.name });
+          const copia = { ...JSON.parse(JSON.stringify(d)), ...j.diseno, fabric: d.fabric ? JSON.parse(JSON.stringify(d.fabric)) : undefined };
+          disenos.splice(i + 1, 0, copia);
+          if (d.fabric) copia.final = await guardarPieza(lote, copia, await DEREditor.render(copia));
+          await guardarOrden(); return render();
+        }
+        if (m === "izq" || m === "der") {
+          const k = m === "izq" ? i - 1 : i + 1;
+          [disenos[i], disenos[k]] = [disenos[k], disenos[i]];
+          await guardarOrden(); return render();
+        }
+        if (m.startsWith("fmt:")) {
+          const j = await api("/api/pieza/formato", { nombre: d.name, formato: m.slice(4) });
+          const nueva = j.diseno;
+          const blob = await DEREditor.convertir(d, nueva, j.rehecha);
+          if (blob) nueva.final = await guardarPieza(lote, nueva, blob);
+          disenos.splice(i + 1, 0, nueva);
+          await guardarOrden(); render();
+          if (!j.rehecha || d.fabric) alert("Listo. Revisala: algunos elementos pueden necesitar un ajuste en el formato nuevo.");
+          return;
+        }
+        if (m === "png" || m === "pngt") return bajar(await DEREditor.render(d, { png: true, transparente: m === "pngt" }), d.name + (m === "pngt" ? "-sin-fondo" : "") + ".png");
+        if (m === "del") {
+          if (!confirm("¿Eliminar esta pieza del lote?")) return;
+          await api("/api/pieza/borrar", { nombre: d.name });
+          disenos.splice(i, 1); return render();
+        }
+      } catch (err) { alert("No se pudo: " + err.message); }
+    });
+  }
+  render();
 }
 
 $("#fReel").onsubmit = async e => {

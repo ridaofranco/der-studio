@@ -737,6 +737,12 @@ RENDERERS = {
 }
 
 
+def relayout(origen: dict, fmt: str, fotos_dir: Path) -> "Design":
+    """La misma pieza (plantilla, fotos y textos) armada en otro formato."""
+    photos = [load_photo(fotos_dir / n) for n in origen.get("fotos", [])]
+    return RENDERERS[origen["plantilla"]](fmt, photos, Content(**origen["contenido"]), first=origen.get("principal", True))
+
+
 # Plantillas que hacen una pieza por foto
 PER_PHOTO = {"impacto", "marco", "banda", "cinta"}
 # Diapositivas siguientes de un carrusel para las plantillas de texto: misma onda, una por foto
@@ -785,13 +791,17 @@ def generate(template: str, formats: list[str], photo_paths: list[Path], content
         raise ValueError("Instagram permite hasta 20 diapositivas por carrusel. Subí 20 fotos o menos.")
     designs = []
     for fmt in formats:
-        plan = slides(template, photos)
-        for i, (tpl, group, main) in enumerate(plan, 1):
+        plan = slides(template, list(range(len(photos))))   # índices: así cada pieza sabe qué fotos usó
+        for i, (tpl, idxs, main) in enumerate(plan, 1):
             first = i == 1 or not carousel_text_first_only
-            d = RENDERERS[tpl](fmt, group, content, first=first and (main or not carousel_text_first_only))
+            principal = first and (main or not carousel_text_first_only)
+            d = RENDERERS[tpl](fmt, [photos[k] for k in idxs], content, first=principal)
             name = f"DER-{template}-{fmt}" + (f"-{i:02d}" if len(plan) > 1 else "")
             base_file = d.save_base(out_dir / name)
-            data = {"name": name, "base_file": base_file, **d.to_dict()}
+            # origen: con esto se puede rehacer la pieza en otro formato (como el "redimensionar" de Canva)
+            origen = {"plantilla": tpl, "fotos": [Path(photo_paths[k]).name for k in idxs],
+                      "contenido": content.__dict__.copy(), "principal": principal}
+            data = {"name": name, "base_file": base_file, **d.to_dict(), "origen": origen}
             (out_dir / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
             designs.append(data)
     return designs

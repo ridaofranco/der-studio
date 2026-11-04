@@ -132,3 +132,16 @@
 .fx-resaltado { background: var(--naranja); color: #fff !important; padding: 0 3px; }
 .fx-curvo { display: inline-block; transform: rotate(-12deg); border-bottom: 2px solid var(--naranja); border-radius: 0 0 50% 50%; }
 .ed-in { width: 100%; padding: 9px 10px; border: 1px solid var(--borde); border-radius: 8px; font: 15px "DER Cuerpo", sans-serif; }
+
+/* entrega 3: fotos, fondo, navegación */
+.ed-cfoto { width: 34px; height: 26px; border-radius: 4px; background: linear-gradient(160deg, #ffb380, var(--naranja) 55%, #7a2c00); position: relative; overflow: hidden; }
+.ed-cfoto::after { content: ""; position: absolute; left: 4px; bottom: 3px; width: 26px; height: 10px; background: #fff7; clip-path: polygon(0 100%, 35% 20%, 55% 60%, 75% 30%, 100% 100%); }
+.ed-cfoto.f { width: 38px; outline: 2px dashed #bbb; outline-offset: 2px; }
+.ed-fl { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-fl button { padding: 7px 10px; border: 1px solid var(--borde); border-radius: 999px; background: #fff; font-size: 12.5px !important; }
+.ed-fl button.on { border-color: var(--naranja); background: #fff3eb; }
+.ed-gradbg { display: flex; gap: 8px; flex-wrap: wrap; }
+.ed-gradbg button { width: 44px; height: 44px; border-radius: 10px; border: 2px solid #ddd; cursor: pointer; }
+.ed-nav { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
+.ed-nav button { width: 30px !important; height: 30px !important; font-size: 20px !important; }
+.ed-pg { font: 12px "DER Sub", sans-serif; color: var(--texto-suave); min-width: 34px; text-align: center; }

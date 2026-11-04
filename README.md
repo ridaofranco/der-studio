@@ -81,6 +81,20 @@ Tocá cualquier imagen generada y se abre el editor. El panel tiene pestañas:
 - Atajos: Ctrl+Z / Ctrl+Shift+Z, Ctrl+C / Ctrl+V, Ctrl+D duplicar, Ctrl+G agrupar (Ctrl+Shift+G desagrupar),
   Ctrl+A todo, flechas para mover de a 1 px (con Shift de a 10), Supr para borrar, Esc para soltar.
 
+- **Fotos**: subir una foto como elemento o como foto de fondo, reemplazarla, **marco** (círculo, redondeado, arco,
+  rombo), **recortar** (zoom, posición y forma 1:1, 4:5, 9:16, 16:9), **filtros** y ajustes (brillo, contraste,
+  saturación, desenfoque).
+- **Fondo**: color, **degradado** con ángulo, y filtros/ajustes para la imagen de base de la plantilla.
+- **Aplicar en todas las piezas** (cualquier elemento, no solo el logo): queda igual en el resto del lote.
+- **‹ ›** arriba: guardar y pasar a la pieza anterior o siguiente sin salir del editor.
+
+### Páginas del lote
+
+Cada pieza tiene un menú **⋯**: editar, **duplicar**, mover antes o después, **pasar a otro formato**
+(post 4:5, 1:1 o historia 9:16: se vuelve a armar con la plantilla y se le pasan los textos editados y lo agregado),
+descargar en **PNG** o **PNG sin fondo**, y eliminar. Arriba: **+ Pieza en blanco** y **Descargar PDF** (todas las
+piezas en orden). El .zip respeta el orden elegido.
+
 La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Encuadre de la foto" al generar.
 
 ## Plantillas

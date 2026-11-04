@@ -14,7 +14,8 @@
 (function () {
   const BRAND = { naranja: "#ff5c00", oscuro: "#333333", claro: "#f0f0f0", blanco: "#ffffff" };
   const FAMILIES = { title: "DER Titulo", subtitle: "DER Sub", body: "DER Cuerpo" };
-  const EXTRA = ["name", "logo", "role", "bloqueado", "efecto", "curvo", "forma", "degradado"];
+  const EXTRA = ["name", "logo", "role", "bloqueado", "efecto", "curvo", "forma", "degradado", "foto", "rid"];
+  if (window.fabric) fabric.filterBackend = new fabric.Canvas2dFilterBackend();  // sin límite de tamaño de textura
   const FS_MULT = 1.13; // fabric.Text._fontSizeMult
   const CLIP_KEY = "derPortapapeles";
 
@@ -104,6 +105,47 @@
     copa: "M7 3h10l-1 7a4 4 0 0 1-8 0zM12 14v6M8 21h8",
   };
 
+  // --- Fotos: filtros (como "Editar foto" de Canva), marcos y recorte ------------------------
+  const FOTO_FILTROS = { ninguno: "Original", vivo: "Vivo", kodachrome: "Cálido", technicolor: "Intenso", polaroid: "Polaroid",
+    vintage: "Vintage", brownie: "Sepia", bn: "Blanco y negro", bncontraste: "B/N contraste" };
+  function photoFilters(fx = {}) {
+    const F = fabric.Image.filters, out = [];
+    const pre = { vivo: () => [new F.Vibrance({ vibrance: 0.5 }), new F.Contrast({ contrast: 0.08 })], kodachrome: () => [new F.Kodachrome()],
+      technicolor: () => [new F.Technicolor()], polaroid: () => [new F.Polaroid()], vintage: () => [new F.Vintage()], brownie: () => [new F.Brownie()],
+      bn: () => [new F.Grayscale()], bncontraste: () => [new F.Grayscale(), new F.Contrast({ contrast: 0.25 })] }[fx.filtro];
+    if (pre) out.push(...pre());
+    if (fx.brillo) out.push(new F.Brightness({ brightness: fx.brillo / 100 * 0.4 }));
+    if (fx.contraste) out.push(new F.Contrast({ contrast: fx.contraste / 100 * 0.5 }));
+    if (fx.saturacion) out.push(new F.Saturation({ saturation: fx.saturacion / 100 }));
+    if (fx.desenfoque) out.push(new F.Blur({ blur: fx.desenfoque / 100 * 0.4 }));
+    return out;
+  }
+  const MARCOS = { ninguno: "Sin marco", circulo: "Círculo", redondeado: "Redondeado", arco: "Arco", rombo: "Rombo" };
+  function clipFor(marco, w, h) {
+    const m = Math.min(w, h), common = { originX: "center", originY: "center", left: 0, top: 0 };
+    if (marco === "circulo") return new fabric.Circle({ radius: m / 2, ...common });
+    if (marco === "redondeado") return new fabric.Rect({ width: w, height: h, rx: m * 0.12, ry: m * 0.12, ...common });
+    if (marco === "arco") return new fabric.Path(`M ${-w / 2} ${h / 2} L ${-w / 2} ${-h / 2 + w / 2} A ${w / 2} ${w / 2} 0 0 1 ${w / 2} ${-h / 2 + w / 2} L ${w / 2} ${h / 2} Z`, { ...common });
+    if (marco === "rombo") return new fabric.Polygon([{ x: 0, y: -h / 2 }, { x: w / 2, y: 0 }, { x: 0, y: h / 2 }, { x: -w / 2, y: 0 }], { ...common });
+    return null;
+  }
+  /** Aplica recorte (zoom y posición dentro del marco), marco y filtros de una foto. */
+  function applyPhoto(o) {
+    const f = o.foto, el = o.getElement();
+    const nw = el.naturalWidth || el.width, nh = el.naturalHeight || el.height;
+    const A = f.aspecto || (nw / nh);
+    let cw0 = Math.min(nw, nh * A), ch0 = cw0 / A;
+    const z = Math.max(1, f.zoom || 1), cw = cw0 / z, ch = ch0 / z;
+    const dispW = o.getScaledWidth();
+    o.set({ cropX: (nw - cw) * (0.5 + 0.5 * (f.px || 0)), cropY: (nh - ch) * (0.5 + 0.5 * (f.py || 0)), width: cw, height: ch });
+    o.set({ scaleX: dispW / cw, scaleY: dispW / cw });
+    o.clipPath = clipFor(f.marco, cw, ch) || undefined;
+    o.objectCaching = false;   // el caché no se entera de los cambios de recorte y dejaba pedazos afuera del marco
+    o.filters = photoFilters(f);
+    o.applyFilters();
+    o.dirty = true; o.setCoords();
+  }
+
   /** Degradado lineal para un relleno: {a, b, ang (grados)}. */
   function gradient(g) {
     const r = (g.ang || 0) * Math.PI / 180, dx = Math.cos(r) / 2, dy = Math.sin(r) / 2;
@@ -131,18 +173,23 @@
     } else {
       for (const l of design.layers) canvas.add(await layerToObject(l));
     }
-    canvas.getObjects().forEach(o => { if (o.bloqueado) applyLock(o, true); });
+    canvas.getObjects().forEach(o => { if (o.bloqueado) applyLock(o, true); if (o.foto) o.objectCaching = false; });
     // color de fondo: se ve donde la base es transparente (todo menos las fotos)
-    canvas.backgroundColor = (design.fabric && design.fabric.background) || design.bg || BRAND.claro;
+    const bgv = (design.fabric && design.fabric.background) || design.bg || BRAND.claro;
+    canvas.backgroundColor = bgv && bgv.colorStops ? new fabric.Gradient(bgv) : bgv;
+    const ffx = design.fabric && design.fabric.fondo_fx;
+    if (ffx) { bg.filters = photoFilters(ffx); bg.applyFilters(); }
+    canvas.fondoFx = ffx || null;
     canvas.renderAll();
   }
 
-  /** Compone el diseño a resolución completa y devuelve un Blob JPG. */
-  async function render(design) {
+  /** Compone el diseño a resolución completa y devuelve un Blob (JPG; o PNG, con o sin fondo). */
+  async function render(design, { png = false, transparente = false } = {}) {
     const el = document.createElement("canvas");
     const c = new fabric.StaticCanvas(el, { width: design.W, height: design.H, enableRetinaScaling: false });
     await build(c, design);
-    const url = c.toDataURL({ format: "jpeg", quality: 0.93 });
+    if (transparente) { c.backgroundColor = null; c.renderAll(); }
+    const url = png ? c.toDataURL({ format: "png" }) : c.toDataURL({ format: "jpeg", quality: 0.93 });
     c.dispose();
     return (await fetch(url)).blob();
   }
@@ -168,7 +215,7 @@
   };
   const ico = n => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${IC[n]}"/></svg>`;
 
-  function ui() {
+  function ui(navegable = false) {
     const wrap = document.createElement("div");
     wrap.className = "ed";
     wrap.innerHTML = `
@@ -180,6 +227,7 @@
           <button data-a="copy" title="Copiar (Ctrl+C)" aria-label="Copiar">${ico("copy")}</button>
           <button data-a="paste" title="Pegar (Ctrl+V), también en otra pieza" aria-label="Pegar">${ico("paste")}</button>
           <span class="ed-name"></span>
+          <span class="ed-nav" ${navegable ? "" : "hidden"}><button data-a="prev" aria-label="Pieza anterior" title="Guardar e ir a la anterior">‹</button><b class="ed-pg"></b><button data-a="next" aria-label="Pieza siguiente" title="Guardar e ir a la siguiente">›</button></span>
         </div>
         <div class="ed-tabs" role="tablist"></div>
         <div class="ed-panel"></div>
@@ -192,9 +240,9 @@
     return wrap;
   }
 
-  async function open(design, { logos = [], onSave, siblings = [], onSaveOther } = {}) {
+  async function open(design, { logos = [], onSave, siblings = [], onSaveOther, lote = "", onNav } = {}) {
     await loadFonts();
-    const root = ui();
+    const root = ui(siblings.length > 1 && !!onNav);
     const $ = s => root.querySelector(s);
     const stage = $(".ed-stage");
     const canvas = new fabric.Canvas(root.querySelector("canvas"), {
@@ -338,6 +386,10 @@
           ${shape("barra", `<i class="ed-cbar"></i>`, "Barra")}
         </div>
         <h3>Íconos</h3><div class="ed-icons">${Object.entries(ICONOS).map(([k, d]) => `<button data-add="icono:${k}" title="${k}" aria-label="Ícono ${k}"><svg viewBox="0 0 24 24"><path d="${d}"/></svg></button>`).join("")}</div>
+        <h3>Fotos</h3><div class="ed-grid2">
+          <button data-a="subir-foto" class="ed-card"><i class="ed-cfoto"></i><span>Subir foto</span></button>
+          <button data-a="foto-fondo" class="ed-card"><i class="ed-cfoto f"></i><span>Foto de fondo</span></button>
+        </div>
         <h3>Marca</h3><div class="ed-grid2">
           <button data-add="esquinero" class="ed-card"><i class="ed-ccor"></i><span>Esquinero</span></button>
           <button data-add="puntos" class="ed-card"><i class="ed-cdots"></i><span>Puntos</span></button>
@@ -348,12 +400,24 @@
     }
 
     function fondoHTML() {
-      const bg = (canvas.backgroundColor || "").toLowerCase();
+      const bg = typeof canvas.backgroundColor === "string" ? canvas.backgroundColor.toLowerCase() : "";
       return `<label>Color de fondo</label><div class="ed-sw ed-bg">
           ${Object.entries(BRAND).map(([k, v]) => `<button data-bg="${v}" title="Fondo ${k}" class="${bg === v ? "on" : ""}" style="background:${v}"></button>`).join("")}
           <label class="ed-otro" title="Otro color"><input type="color" data-bgpick value="${/^#[0-9a-f]{6}$/i.test(bg) ? bg : "#333333"}"><span>Otro</span></label>
-        </div><p class="ed-tip">Cambia el fondo liso de la pieza (las fotos no se tocan). Lo que queda del mismo color que el fondo pasa solo a un color que contraste.</p>`;
+        </div><p class="ed-tip">Cambia el fondo liso de la pieza (las fotos no se tocan). Lo que queda del mismo color que el fondo pasa solo a un color que contraste.</p>
+        <h3>Degradado de fondo</h3>
+        <div class="ed-gradbg">${[[BRAND.naranja, BRAND.oscuro], [BRAND.oscuro, "#000000"], [BRAND.naranja, "#ffb380"], [BRAND.claro, BRAND.blanco], ["#333333", BRAND.naranja]].map(([a, b]) =>
+          `<button data-bggrad="${a},${b}" style="background:linear-gradient(135deg,${a},${b})" aria-label="Degradado"></button>`).join("")}</div>
+        <label>Ángulo <output>${bgAng}°</output></label><input type="range" data-bgang min="0" max="360" step="15" value="${bgAng}">
+        <h3>Foto de fondo de la plantilla</h3>
+        <div class="ed-fl">${Object.entries(FOTO_FILTROS).map(([k, n]) => `<button data-ffx="${k}" class="${(fondoFx().filtro || "ninguno") === k ? "on" : ""}">${n}</button>`).join("")}</div>
+        <label>Brillo <output>${fondoFx().brillo || 0}</output></label><input type="range" data-ffa="brillo" min="-100" max="100" value="${fondoFx().brillo || 0}">
+        <label>Contraste <output>${fondoFx().contraste || 0}</output></label><input type="range" data-ffa="contraste" min="-100" max="100" value="${fondoFx().contraste || 0}">
+        <label>Saturación <output>${fondoFx().saturacion || 0}</output></label><input type="range" data-ffa="saturacion" min="-100" max="100" value="${fondoFx().saturacion || 0}">
+        <p class="ed-tip">Afecta toda la imagen de base de la plantilla (foto, degradés y bandas).</p>`;
     }
+    let bgAng = 135, bgGrad = null;
+    const fondoFx = () => canvas.fondoFx || {};
 
     const kindName = o => o.type === "activeSelection" ? `${o.getObjects().length} elementos` : o.type === "group" ? "Grupo" :
       o.name || (o.type === "textbox" ? "Texto" : o.logo ? "Logo" : "Elemento");
@@ -398,11 +462,10 @@
           ${efectosHTML(o)}`;
       }
       if (isShape(o)) h += formaHTML(o);
-      if (isLogo) {
-        h += `<label>Cambiar logo</label><select data-p="logo">${logoOptsHtml(o.logo)}</select>
-          <button data-a="replicar" class="ed-wide ed-replicar">Replicar en todas las piezas</button>
-          <p class="ed-rep-hint">Mismo logo, mismo tamaño y mismo lugar en el resto de las piezas de este lote.</p>`;
-      }
+      if (isLogo) h += `<label>Cambiar logo</label><select data-p="logo">${logoOptsHtml(o.logo)}</select>`;
+      if (o.foto) h += fotoHTML(o);
+      if (!isSel && siblings.length > 1) h += `<button data-a="replicar" class="ed-wide ed-replicar">${isLogo ? "Replicar el logo" : "Aplicar"} en todas las piezas</button>
+          <p class="ed-rep-hint">Mismo elemento, tamaño y lugar en el resto de las piezas de este lote (si ya estaba, se reemplaza).</p>`;
       if (!isLogo && !o.curvo && !(isShape(o) && o.degradado)) {
         h += `<label>${isShape(o) && !isStroke(o) ? "Relleno" : "Color"} <small class="ed-colorhint"></small></label><div class="ed-sw">
           ${Object.entries(BRAND).map(([k, v]) => `<button data-color="${v}" title="${k}" style="background:${v}"></button>`).join("")}
@@ -439,6 +502,21 @@
         <label>Color del brillo</label><div class="ed-sw">${dots("data-fxc", o.shadow.color)}</div>`;
       if (e === "resaltado") h += `<label>Color del resaltado</label><div class="ed-sw">${dots("data-fxc", o.textBackgroundColor)}</div>`;
       return h;
+    }
+
+    function fotoHTML(o) {
+      const f = o.foto;
+      return `<div class="ed-btns"><button data-a="reemplazar-foto">Reemplazar foto</button></div>
+        <h3>Marco</h3><div class="ed-btns">${Object.entries(MARCOS).map(([k, n]) => `<button data-marco="${k}" class="${(f.marco || "ninguno") === k ? "on" : ""}">${n}</button>`).join("")}</div>
+        <h3>Recortar</h3>
+        <label>Zoom <output>${(f.zoom || 1).toFixed(2)}x</output></label><input type="range" data-ph="zoom" min="1" max="4" step="0.05" value="${f.zoom || 1}">
+        <label>Mover ← → <output>${Math.round((f.px || 0) * 100)}</output></label><input type="range" data-ph="px" min="-1" max="1" step="0.02" value="${f.px || 0}">
+        <label>Mover ↑ ↓ <output>${Math.round((f.py || 0) * 100)}</output></label><input type="range" data-ph="py" min="-1" max="1" step="0.02" value="${f.py || 0}">
+        <label>Forma del recorte</label><div class="ed-btns">${[["", "Original"], ["1", "1:1"], ["0.8", "4:5"], ["0.5625", "9:16"], ["1.7778", "16:9"]].map(([v, n]) => `<button data-asp="${v}" class="${String(f.aspecto || "") === v ? "on" : ""}">${n}</button>`).join("")}</div>
+        <h3>Filtros</h3><div class="ed-fl">${Object.entries(FOTO_FILTROS).map(([k, n]) => `<button data-pf="${k}" class="${(f.filtro || "ninguno") === k ? "on" : ""}">${n}</button>`).join("")}</div>
+        <h3>Ajustes</h3>
+        ${[["brillo", "Brillo"], ["contraste", "Contraste"], ["saturacion", "Saturación"], ["desenfoque", "Desenfoque"]].map(([k, n]) =>
+          `<label>${n} <output>${f[k] || 0}</output></label><input type="range" data-ph="${k}" min="${k === "desenfoque" ? 0 : -100}" max="100" value="${f[k] || 0}">`).join("")}`;
     }
 
     function curvoHTML(o) {
@@ -628,6 +706,28 @@
         r.onchange = () => { snapshot(); if (r.dataset.shp === "strokeWidth") panel(); };
       });
       P.querySelectorAll("[data-shc]").forEach(b => b.onclick = () => { o.set("stroke", b.dataset.shc); if (!o.strokeWidth) o.set("strokeWidth", 6 * s); canvas.requestRenderAll(); snapshot(); panel(); });
+      // foto: marco, recorte, filtros, ajustes
+      P.querySelectorAll("[data-marco]").forEach(b => b.onclick = () => { o.foto.marco = b.dataset.marco; applyPhoto(o); canvas.requestRenderAll(); snapshot(); panel(); });
+      P.querySelectorAll("[data-pf]").forEach(b => b.onclick = () => { o.foto.filtro = b.dataset.pf; applyPhoto(o); canvas.requestRenderAll(); snapshot(); panel(); });
+      P.querySelectorAll("[data-asp]").forEach(b => b.onclick = () => { o.foto.aspecto = b.dataset.asp ? +b.dataset.asp : null; applyPhoto(o); canvas.requestRenderAll(); snapshot(); panel(); });
+      P.querySelectorAll("[data-ph]").forEach(r => {
+        const k = r.dataset.ph, light = ["zoom", "px", "py"].includes(k);
+        r.oninput = () => {
+          o.foto[k] = +r.value;
+          r.previousElementSibling.querySelector("output").textContent = k === "zoom" ? (+r.value).toFixed(2) + "x" : light ? Math.round(r.value * 100) : r.value;
+          if (light) applyPhoto(o); canvas.requestRenderAll();
+        };
+        r.onchange = () => { if (!light) applyPhoto(o); canvas.requestRenderAll(); snapshot(); };
+      });
+      // fondo: degradado y foto de base
+      P.querySelectorAll("[data-bggrad]").forEach(b => b.onclick = () => { const [a, c] = b.dataset.bggrad.split(","); bgGrad = { a, b: c }; setBgGradient(); });
+      const ba = P.querySelector("[data-bgang]");
+      if (ba) { ba.oninput = () => { bgAng = +ba.value; ba.previousElementSibling.querySelector("output").textContent = ba.value + "°"; if (bgGrad) setBgGradient(false); }; ba.onchange = () => snapshot(); }
+      P.querySelectorAll("[data-ffx]").forEach(b => b.onclick = () => { canvas.fondoFx = { ...fondoFx(), filtro: b.dataset.ffx }; applyFondo(); panel(); });
+      P.querySelectorAll("[data-ffa]").forEach(r => {
+        r.oninput = () => { r.previousElementSibling.querySelector("output").textContent = r.value; };
+        r.onchange = () => { canvas.fondoFx = { ...fondoFx(), [r.dataset.ffa]: +r.value }; applyFondo(); };
+      });
       // posición
       P.querySelectorAll("[data-al]").forEach(b => b.onclick = () => align(b.dataset.al));
       P.querySelectorAll("[data-ord]").forEach(b => b.onclick = () => order(b.dataset.ord));
@@ -733,6 +833,67 @@
       const i = canvas.getObjects().indexOf(o);
       batch(() => { canvas.remove(o); canvas.add(t); canvas.moveTo(t, i); });
       canvas.setActiveObject(t); canvas.requestRenderAll(); snapshot(); panel();
+    }
+
+    function setBgGradient(snap = true) {
+      const r = bgAng * Math.PI / 180, cx = design.W / 2, cy = design.H / 2, L = Math.hypot(design.W, design.H) / 2;
+      canvas.backgroundColor = new fabric.Gradient({ type: "linear", gradientUnits: "pixels",
+        coords: { x1: cx - Math.cos(r) * L, y1: cy - Math.sin(r) * L, x2: cx + Math.cos(r) * L, y2: cy + Math.sin(r) * L },
+        colorStops: [{ offset: 0, color: bgGrad.a }, { offset: 1, color: bgGrad.b }] });
+      canvas.requestRenderAll(); if (snap) snapshot();
+    }
+    function applyFondo() {
+      const bg = canvas.backgroundImage;
+      if (!bg) return;
+      bg.filters = photoFilters(canvas.fondoFx || {}); bg.applyFilters();
+      canvas.requestRenderAll();
+    }
+
+    // fotos subidas desde el celular o la compu
+    function pickPhoto() {
+      return new Promise(ok => {
+        const inp = document.createElement("input");
+        inp.type = "file"; inp.accept = "image/*";
+        inp.onchange = async () => {
+          const f = inp.files[0];
+          if (!f) return ok(null);
+          toast("Subiendo la foto…");
+          const fd = new FormData(); fd.append("lote", lote); fd.append("archivo", f);
+          try {
+            const r = await fetch("/api/pieza/medio", { method: "POST", body: fd }), j = await r.json();
+            if (!r.ok) throw new Error(j.error);
+            ok(j.url);
+          } catch (err) { toast("No se pudo subir: " + err.message); ok(null); }
+        };
+        inp.click();
+      });
+    }
+    async function addPhoto(asBackground) {
+      const url = await pickPhoto();
+      if (!url) return;
+      const o = await loadImage(url, { crossOrigin: "anonymous" });
+      o.set({ name: asBackground ? "Foto de fondo" : "Foto" });
+      o.foto = { marco: "ninguno", zoom: 1, px: 0, py: 0, filtro: "ninguno", aspecto: asBackground ? design.W / design.H : null };
+      if (asBackground) {
+        o.scale(design.W / o.width);
+        applyPhoto(o);
+        o.set({ left: 0, top: 0 });
+        canvas.add(o); o.sendToBack(); applyLock(o, true);
+      } else {
+        o.scale(design.W * 0.6 / o.width);
+        applyPhoto(o);
+        canvas.add(center(o));
+      }
+      canvas.setActiveObject(o); canvas.requestRenderAll(); snapshot(); panel();
+    }
+    async function replacePhoto() {
+      const o = active();
+      const url = await pickPhoto();
+      if (!url || !o) return;
+      const w = o.getScaledWidth();
+      await new Promise(ok => o.setSrc(url, ok, { crossOrigin: "anonymous" }));
+      o.set({ scaleX: w / o.width, scaleY: w / o.width });
+      applyPhoto(o); canvas.requestRenderAll(); snapshot(); panel();
     }
 
     // alinear: un elemento → a la página; varios → entre ellos (dentro del recuadro de la selección)
@@ -945,6 +1106,8 @@
       italic() { const o = active(); o.set("fontStyle", o.fontStyle === "italic" ? "normal" : "italic"); o.initDimensions(); canvas.requestRenderAll(); snapshot(); panel(); },
       underline() { const o = active(); o.set("underline", !o.underline); canvas.requestRenderAll(); snapshot(); panel(); },
       uncurve,
+      "subir-foto": () => addPhoto(false), "foto-fondo": () => addPhoto(true), "reemplazar-foto": replacePhoto,
+      prev: () => nav(-1), next: () => nav(1),
       fliph() { const o = active(); o.set("flipX", !o.flipX); canvas.requestRenderAll(); snapshot(); },
       flipv() { const o = active(); o.set("flipY", !o.flipY); canvas.requestRenderAll(); snapshot(); },
       "page-center"() { const o = active(); moveRect(o, "hcenter", { left: 0, top: 0, width: design.W, height: design.H }); moveRect(o, "vcenter", { left: 0, top: 0, width: design.W, height: design.H }); canvas.requestRenderAll(); snapshot(); },
@@ -954,15 +1117,17 @@
 
       // Replicar el logo elegido en las demás piezas del lote: mismo archivo, tamaño, posición y opacidad.
       // Si la otra pieza ya tiene ese logo (o su logo principal), se reemplaza; no queda duplicado.
+      // Aplicar el elemento elegido en las demás piezas del lote: mismo tamaño, lugar y estilo.
+      // Si ya se había aplicado antes (o es el logo principal), se reemplaza; no queda duplicado.
       async replicar() {
         const o = active();
-        if (!o || !o.logo) return;
+        if (!o || o.type === "activeSelection") return;
         const others = siblings.filter(d => d !== design);
         const btn = $(".ed-replicar"), hint = $(".ed-rep-hint");
         if (!others.length || !onSaveOther) { hint.textContent = "No hay otras piezas en este lote."; return; }
-        const principal = canvas.getObjects().find(x => x.logo) === o;
-        const spec = { key: o.logo, src: o.getSrc(), left: o.left, top: o.top, scaleX: o.scaleX, scaleY: o.scaleY,
-          angle: o.angle || 0, opacity: o.opacity ?? 1, name: o.name || "Logo", W: design.W, H: design.H, cy: o.getCenterPoint().y };
+        if (!o.rid) o.rid = Math.random().toString(36).slice(2, 10);
+        const principal = !!o.logo && canvas.getObjects().find(x => x.logo) === o;
+        const json = o.toObject(EXTRA), cy = o.getCenterPoint().y;
         btn.disabled = true;
         let ok = 0;
         try {
@@ -971,45 +1136,62 @@
             const el = document.createElement("canvas");
             const c = new fabric.StaticCanvas(el, { width: d.W, height: d.H, enableRetinaScaling: false });
             await build(c, d);
-            const logosT = c.getObjects().filter(x => x.logo);
-            let rm = logosT.filter(x => x.logo === spec.key);
-            if (!rm.length && principal && logosT.length) rm = [logosT[0]];
+            let rm = c.getObjects().filter(x => x.rid === o.rid || (o.logo && x.logo === o.logo));
+            if (!rm.length && principal) rm = c.getObjects().filter(x => x.logo).slice(0, 1);
             const idx = rm.length ? c.getObjects().indexOf(rm[0]) : -1;
             rm.forEach(x => c.remove(x));
-            const img = await loadImage(spec.src);
-            const k2 = d.W / spec.W;
-            // otro formato (post / historia): si el logo está en la mitad de abajo, se mantiene la distancia al borde de abajo
-            let top = spec.top * k2;
-            if (d.H !== spec.H && spec.cy > spec.H / 2) top = d.H - (spec.H - spec.top) * k2;
-            img.set({ left: spec.left * k2, top, scaleX: spec.scaleX * k2, scaleY: spec.scaleY * k2, angle: spec.angle,
-              opacity: spec.opacity, name: spec.name, logo: spec.key });
-            c.add(img);
-            if (idx >= 0) c.moveTo(img, idx);
+            const [n] = await new Promise(res => fabric.util.enlivenObjects([json], res));
+            const k2 = d.W / design.W;
+            let top = json.top * k2;
+            // otro formato (post / historia): si está en la mitad de abajo, se mantiene la distancia al borde de abajo
+            if (d.H !== design.H && cy > design.H / 2) top = d.H - (design.H - json.top) * k2;
+            n.set({ left: json.left * k2, top, scaleX: json.scaleX * k2, scaleY: json.scaleY * k2 });
+            if (n.bloqueado) applyLock(n, true);
+            c.add(n);
+            if (idx >= 0) c.moveTo(n, idx);
             c.renderAll();
             d.fabric = c.toJSON(EXTRA);
             delete d.fabric.backgroundImage;
+            if (c.fondoFx) d.fabric.fondo_fx = c.fondoFx;
             const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
             c.dispose();
             await onSaveOther(d, blob);
             ok++;
           }
-          hint.textContent = `Listo: el logo quedó igual en ${ok} pieza${ok > 1 ? "s" : ""} más. Tocá Guardar para esta.`;
+          hint.textContent = `Listo: quedó igual en ${ok} pieza${ok > 1 ? "s" : ""} más. Tocá Guardar para esta.`;
+          snapshot();
         } catch (err) {
           hint.textContent = `Se aplicó en ${ok} de ${others.length}. Error: ${err.message || err}`;
         } finally { btn.disabled = false; }
       },
       async save() {
-        canvas.discardActiveObject(); canvas.renderAll();
-        const z = ed.zoom;
-        const url = canvas.toDataURL({ format: "jpeg", quality: 0.93, multiplier: 1 / z });
-        design.fabric = canvas.toJSON(EXTRA);
-        delete design.fabric.backgroundImage;
-        const blob = await (await fetch(url)).blob();
+        const blob = await exportar();
         close();
         onSave && onSave(design, blob);
       },
     };
     root.querySelectorAll(".ed-top [data-a], .ed-foot [data-a]").forEach(b => b.onclick = () => actions[b.dataset.a]());
+    const pos = siblings.indexOf(design);
+    if (pos >= 0) $(".ed-pg").textContent = `${pos + 1}/${siblings.length}`;
+
+    async function exportar() {
+      canvas.discardActiveObject(); canvas.renderAll();
+      const z = ed.zoom;
+      const url = canvas.toDataURL({ format: "jpeg", quality: 0.93, multiplier: 1 / z });
+      design.fabric = canvas.toJSON(EXTRA);
+      delete design.fabric.backgroundImage;
+      if (canvas.fondoFx) design.fabric.fondo_fx = canvas.fondoFx;
+      return (await fetch(url)).blob();
+    }
+    // guardar e ir a la pieza anterior / siguiente (como pasar de página en Canva)
+    async function nav(dir) {
+      const i = siblings.indexOf(design) + dir;
+      if (i < 0 || i >= siblings.length || !onNav) return;
+      const blob = await exportar();
+      close();
+      if (onSave) await onSave(design, blob);
+      onNav(i);
+    }
 
     // Fondo: cambia el color liso de la pieza (las fotos no se tocan)
     // Si un elemento queda del mismo color que el fondo nuevo, pasa al color de marca que contrasta
@@ -1101,7 +1283,52 @@
     panel();
   }
 
+  /** "Redimensionar": pasa lo editado de `src` a la pieza nueva `dst` (otro formato).
+   *  rehecha = el servidor ya armó la plantilla en el formato nuevo: se le copian los textos editados
+   *  (por nombre) y se suman los elementos que agregó el usuario; si no, se reubica todo. */
+  async function convertir(src, dst, rehecha) {
+    if (!src.fabric) return null;   // sin edición: la que armó el servidor ya está bien
+    const el = document.createElement("canvas");
+    const c = new fabric.StaticCanvas(el, { width: dst.W, height: dst.H, enableRetinaScaling: false });
+    await build(c, dst);
+    const srcObjs = src.fabric.objects || [];
+    const tpl = rehecha ? c.getObjects().slice() : [];
+    const used = new Set();
+    const extra = [];
+    for (const so of srcObjs) {
+      const match = tpl.find(t => !used.has(t) && t.name && t.name === so.name && t.type === so.type);
+      if (match) {
+        used.add(match);
+        if (so.type === "textbox") match.set({ text: so.text, fill: so.fill, styles: so.styles || {}, charSpacing: so.charSpacing || 0 });
+        if (so.logo && so.logo !== match.logo) match.set({ logo: so.logo });
+        continue;
+      }
+      extra.push(so);
+    }
+    // los de la plantilla que el usuario borró, se borran también
+    if (rehecha) tpl.forEach(t => { if (!used.has(t) && srcObjs.length && !["Logo"].includes(t.name)) c.remove(t); });
+    const k = dst.W / src.W;
+    const objs = await new Promise(res => fabric.util.enlivenObjects(extra, res));
+    objs.forEach(n => {
+      const b = n.getBoundingRect(true, true), cy = b.top + b.height / 2;
+      const ty = cy < src.H / 3 ? n.top * k : cy > src.H * 2 / 3 ? dst.H - (src.H - n.top) * k : n.top * dst.H / src.H;
+      n.set({ left: n.left * k, top: ty, scaleX: n.scaleX * k, scaleY: n.scaleY * k });
+      if (n.bloqueado) applyLock(n, true);
+      if (n.foto && n.name === "Foto de fondo") { n.foto.aspecto = dst.W / dst.H; n.set({ left: 0, top: 0 }); n.scale(dst.W / n.width); applyPhoto(n); n.set({ left: 0, top: 0 }); }
+      c.add(n);
+      if (n.name === "Foto de fondo") n.sendToBack();
+    });
+    if (src.fabric.background) c.backgroundColor = typeof src.fabric.background === "string" ? src.fabric.background : new fabric.Gradient(src.fabric.background);
+    c.renderAll();
+    dst.fabric = c.toJSON(EXTRA);
+    delete dst.fabric.backgroundImage;
+    if (src.fabric.fondo_fx) dst.fabric.fondo_fx = src.fabric.fondo_fx;
+    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+    c.dispose();
+    return blob;
+  }
+
   const logoUrl = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");
 
-  window.DEREditor = { render, open, loadFonts, build };
+  window.DEREditor = { render, open, loadFonts, build, convertir };
 })();

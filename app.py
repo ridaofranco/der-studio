@@ -239,6 +239,14 @@ def api_graficos():
         if template in graphics.PHOTO_TEMPLATES and not photos:
             return jsonify(error="Esta plantilla necesita al menos una foto."), 400
         out = _job_dir(template)
+        # las fotos quedan en el lote: hacen falta para cambiar de formato una pieza más adelante
+        (out / "fotos").mkdir()
+        kept = []
+        for i, ph in enumerate(photos):
+            dst = out / "fotos" / f"{i:02d}_{ph.name}"
+            shutil.move(str(ph), dst)
+            kept.append(dst)
+        photos = kept
         job_id = _job_new("piezas", out)
         threading.Thread(target=_run_graficos, daemon=True, args=(
             job_id, template, formats, photos, content, out, request.form.get("texto_todas") != "1")).start()
@@ -659,7 +667,7 @@ def api_lote(lote):
             info.update(proyecto=_reel_info(d, project), **REEL_CATALOGO)
         return jsonify(info)
     designs = []
-    for j in sorted(d.glob("DER-*.json")):
+    for j in [d / f"{n}.json" for n in _orden(d)]:
         data = json.loads(j.read_text(encoding="utf-8"))
         if "base_file" not in data:  # piezas de versiones anteriores
             data["base_file"] = f"{data['name']}.base.jpg"
@@ -744,13 +752,162 @@ def api_guardar():
     return jsonify(ok=True, url=_url(d / f"{name}.jpg"))
 
 
+def _orden(d: Path) -> list[str]:
+    """Nombres de las piezas en el orden elegido (páginas del carrusel)."""
+    names = sorted(p.stem for p in d.glob("DER-*.json"))
+    f = d / "orden.json"
+    if f.exists():
+        pref = [n for n in json.loads(f.read_text(encoding="utf-8")) if n in names]
+        return pref + [n for n in names if n not in pref]
+    return names
+
+
 @app.get("/api/zip/<lote>")
 def api_zip(lote):
     d = _lote(lote)
-    files = sorted([*(p for p in d.glob("*.jpg") if not p.name.endswith(".base.jpg")),
-                    *d.glob("DER-carrusel-*.mp4")], key=lambda p: p.name)
-    zipf = _zip(files, d / "DER-piezas.zip")
+    if d.name.endswith("_carrusel") or not (d / "orden.json").exists():
+        files = sorted([*(p for p in d.glob("*.jpg") if not p.name.endswith(".base.jpg")),
+                        *d.glob("DER-carrusel-*.mp4")], key=lambda p: p.name)
+        zipf = _zip(files, d / "DER-piezas.zip")
+    else:
+        zipf = d / "DER-piezas.zip"
+        with zipfile.ZipFile(zipf, "w", zipfile.ZIP_STORED) as z:
+            for k, n in enumerate(_orden(d), 1):
+                if (d / f"{n}.jpg").exists():
+                    z.write(d / f"{n}.jpg", f"{k:02d}-{n}.jpg")
     return send_from_directory(d, zipf.name, as_attachment=True)
+
+
+@app.get("/api/pdf/<lote>")
+def api_pdf(lote):
+    """Todas las piezas en un PDF (una por página, en orden)."""
+    from PIL import Image as PILImage
+    d = _lote(lote)
+    names = [n for n in _orden(d) if (d / f"{n}.jpg").exists()]
+    if not names:
+        abort(404)
+    imgs = [PILImage.open(d / f"{n}.jpg").convert("RGB") for n in names]
+    out = d / "DER-piezas.pdf"
+    imgs[0].save(out, "PDF", save_all=True, append_images=imgs[1:], resolution=150)
+    return send_from_directory(d, out.name, as_attachment=True)
+
+
+def _pieza(d: Path, name: str) -> dict:
+    f = d / f"{secure_filename(name)}.json"
+    if not f.exists():
+        abort(404)
+    data = json.loads(f.read_text(encoding="utf-8"))
+    data.setdefault("base_file", f"{data['name']}.base.jpg")
+    return data
+
+
+def _nombre_libre(d: Path, base: str) -> str:
+    n, k = base, 2
+    while (d / f"{n}.json").exists():
+        n, k = f"{base}-{k}", k + 1
+    return n
+
+
+@app.post("/api/pieza/medio")
+def api_pieza_medio():
+    """Foto subida desde el editor (para agregarla como elemento o de fondo)."""
+    d = _lote(request.form.get("lote", ""))
+    f = request.files.get("archivo")
+    if not f:
+        abort(400)
+    (d / "medios").mkdir(exist_ok=True)
+    try:
+        img = graphics.load_photo(f.stream)
+    except Exception:  # noqa: BLE001
+        return jsonify(error="No pude abrir esa imagen."), 400
+    img.thumbnail((2400, 2400))
+    dst = d / "medios" / f"{uuid.uuid4().hex[:10]}.jpg"
+    img.save(dst, "JPEG", quality=90)
+    return jsonify(url=_url(dst), w=img.width, h=img.height)
+
+
+@app.post("/api/pieza/nueva")
+def api_pieza_nueva():
+    """Página nueva del carrusel: duplicando una pieza o en blanco (con el formato elegido)."""
+    from PIL import Image as PILImage
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    desde = data.get("desde")
+    if desde:
+        src = _pieza(d, desde)
+        name = _nombre_libre(d, f"{src['name']}-copia")
+        ext = Path(src["base_file"]).suffix
+        shutil.copy(d / src["base_file"], d / f"{name}.base{ext}")
+        new = {**src, "name": name, "base_file": f"{name}.base{ext}"}
+        if (d / f"{src['name']}.jpg").exists():
+            shutil.copy(d / f"{src['name']}.jpg", d / f"{name}.jpg")
+    else:
+        fmt = data.get("formato") if data.get("formato") in brand.FORMATS else "post"
+        W, H = brand.FORMATS[fmt]
+        name = _nombre_libre(d, f"DER-blanco-{fmt}")
+        PILImage.new("RGBA", (W, H), (0, 0, 0, 0)).save(d / f"{name}.base.png")
+        new = {"name": name, "base_file": f"{name}.base.png", "fmt": fmt, "W": W, "H": H, "bg": brand.LIGHT, "layers": []}
+        compose.save_final(new, d)
+    (d / f"{name}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
+    orden = _orden(d)
+    if desde and name in orden:   # la copia va justo después de la original
+        orden.remove(name)
+        orden.insert(orden.index(desde) + 1 if desde in orden else len(orden), name)
+    (d / "orden.json").write_text(json.dumps(orden), encoding="utf-8")
+    return jsonify(diseno=_design_out(d, new), orden=orden)
+
+
+@app.post("/api/pieza/borrar")
+def api_pieza_borrar():
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    p = _pieza(d, str(data.get("nombre", "")))
+    for f in (d / f"{p['name']}.json", d / f"{p['name']}.jpg", d / p["base_file"]):
+        f.unlink(missing_ok=True)
+    orden = [n for n in _orden(d) if n != p["name"]]
+    (d / "orden.json").write_text(json.dumps(orden), encoding="utf-8")
+    return jsonify(ok=True, orden=orden)
+
+
+@app.post("/api/pieza/orden")
+def api_pieza_orden():
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    names = [secure_filename(n) for n in data.get("nombres") or []]
+    (d / "orden.json").write_text(json.dumps(names), encoding="utf-8")
+    return jsonify(orden=_orden(d))
+
+
+@app.post("/api/pieza/formato")
+def api_pieza_formato():
+    """Cambiar de formato (post 4:5, cuadrado 1:1, historia 9:16). Con la plantilla original se vuelve
+    a armar bien para el formato nuevo; si no, se recorta la base y el navegador reubica los elementos."""
+    from PIL import Image as PILImage
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    src = _pieza(d, str(data.get("nombre", "")))
+    fmt = data.get("formato") if data.get("formato") in brand.FORMATS else "historia"
+    name = _nombre_libre(d, f"{src['name']}-{fmt}")
+    origen = src.get("origen")
+    fotos_ok = origen and all((d / "fotos" / n).exists() for n in origen.get("fotos", []))
+    if fotos_ok:
+        D = graphics.relayout(origen, fmt, d / "fotos")
+        new = {"name": name, "base_file": D.save_base(d / name), **D.to_dict(), "origen": origen}
+        rehecha = True
+    else:
+        W, H = brand.FORMATS[fmt]
+        base = PILImage.open(d / src["base_file"]).convert("RGBA")
+        graphics.cover(base, W, H).save(d / f"{name}.base.png")
+        new = {"name": name, "base_file": f"{name}.base.png", "fmt": fmt, "W": W, "H": H, "bg": src.get("bg", brand.LIGHT), "layers": []}
+        rehecha = False
+    (d / f"{name}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
+    compose.save_final(new, d)
+    orden = _orden(d)
+    if name in orden:
+        orden.remove(name)
+        orden.insert(orden.index(src["name"]) + 1 if src["name"] in orden else len(orden), name)
+    (d / "orden.json").write_text(json.dumps(orden), encoding="utf-8")
+    return jsonify(diseno=_design_out(d, new), rehecha=rehecha, orden=orden)
 
 
 @app.get("/logos/ver/<path:key>")
