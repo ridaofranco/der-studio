@@ -1,10 +1,18 @@
 /* Editor de piezas (estilo Canva): lienzo a la izquierda, panel con pestañas a la derecha (abajo en el celular) */
 .ed { position: fixed; inset: 0; z-index: 50; background: #1c1c1c; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
 .ed svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.ed-stage { position: relative; display: grid; place-items: center; overflow: hidden; min-height: 0;
+.ed-stagew { position: relative; min-height: 0; min-width: 0; display: grid; }
+.ed-stage { position: relative; overflow: auto; min-height: 0; min-width: 0;
   background: repeating-conic-gradient(#262626 0 25%, #222 0 50%) 0 0 / 24px 24px; }
+.ed-zoomwrap { min-width: 100%; min-height: 100%; width: max-content; height: max-content; display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
+.ed-stage.panning, .ed-stage.panning canvas { cursor: grab !important; }
+.ed-zoombar { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 2px; background: rgba(20,20,20,.85); border-radius: 9px; padding: 3px; z-index: 4; }
+.ed-zoombar button { border: 0; background: transparent; color: #eee; min-width: 34px; height: 32px; border-radius: 7px; cursor: pointer; font: 13px "DER Sub", sans-serif; padding: 0 8px; }
+.ed-zoombar button:hover { background: #333; }
+.ed-zoombar button.on { background: var(--naranja); color: #fff; }
+.ed-zoombar .ed-zoomlbl { position: static; background: transparent; min-width: 52px; font-variant-numeric: tabular-nums; }
 .ed-stage .canvas-container { box-shadow: 0 10px 40px rgba(0,0,0,.5); }
-.ed-zoomlbl { position: absolute; left: 12px; bottom: 10px; font: 11px "DER Sub", sans-serif; color: #aaa; background: rgba(0,0,0,.5); padding: 3px 7px; border-radius: 5px; }
+
 .ed-toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: #f0f0f0; color: #222; padding: 9px 14px; border-radius: 9px;
   font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.4); opacity: 0; pointer-events: none; max-width: 90%; text-align: center; z-index: 5; }
 .ed-toast.on { opacity: 1; }

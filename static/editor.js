@@ -247,7 +247,14 @@
     const wrap = document.createElement("div");
     wrap.className = "ed";
     wrap.innerHTML = `
-      <div class="ed-stage"><canvas></canvas><div class="ed-zoomlbl"></div></div>
+      <div class="ed-stagew"><div class="ed-stage"><div class="ed-zoomwrap"><canvas></canvas></div></div>
+        <div class="ed-zoombar">
+          <button data-z="out" aria-label="Alejar" title="Alejar (Ctrl −)">−</button>
+          <button data-z="pct" class="ed-zoomlbl" title="Tocá para ver al 100%">100%</button>
+          <button data-z="in" aria-label="Acercar" title="Acercar (Ctrl +)">+</button>
+          <button data-z="fit" title="Ajustar a la pantalla (Ctrl 0)">Ajustar</button>
+          <button data-z="pan" class="ed-pan" title="Mover la vista con un dedo (sin tocar los elementos)" aria-label="Mover la vista">✋</button>
+        </div></div>
       <aside class="ed-side">
         <div class="ed-top">
           <button data-a="undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer">${ico("undo")}</button>
@@ -287,16 +294,93 @@
       ...logos.map(n => ["file:" + n, n.replace(/\.(png|webp)$/i, "")])];
     const logoOptsHtml = sel => logoOpts.map(([v, t]) => `<option value="${v}" ${v === sel ? "selected" : ""}>${t}</option>`).join("");
 
-    const fit = () => {
-      const r = stage.getBoundingClientRect();
-      const z = Math.min((r.width - 24) / design.W, (r.height - 24) / design.H);
-      canvas.setDimensions({ width: design.W * z, height: design.H * z });
+    // --- Zoom (como Canva): el lienzo crece y la zona de trabajo se desplaza -----------------
+    const wrap = $(".ed-zoomwrap");
+    wrap.appendChild(canvas.wrapperEl);
+    let fitZ = 1, atFit = true, panMode = false;
+    const dpr = window.devicePixelRatio || 1;
+    // tope: que el lienzo no pase de ~4096 px reales (los celulares se quedan sin memoria)
+    const maxZ = () => Math.max(fitZ * 1.5, Math.min(4, 4096 / (Math.max(design.W, design.H) * dpr)));
+    function setZoomLevel(z, clientX, clientY) {
+      z = Math.max(fitZ * 0.5, Math.min(maxZ(), z));
+      const old = ed.zoom || z, r0 = canvas.upperCanvasEl.getBoundingClientRect();
+      const fx = clientX ?? (r0.left + r0.width / 2), fy = clientY ?? (r0.top + r0.height / 2);
+      const dx = (fx - r0.left) / old, dy = (fy - r0.top) / old;   // punto de la pieza bajo el puntero
+      canvas.setDimensions({ width: Math.round(design.W * z), height: Math.round(design.H * z) });
       canvas.setZoom(z);
       ed.zoom = z;
+      atFit = Math.abs(z - fitZ) < 0.001;
+      const r1 = canvas.upperCanvasEl.getBoundingClientRect();
+      stage.scrollLeft += r1.left + dx * z - fx;
+      stage.scrollTop += r1.top + dy * z - fy;
       $(".ed-zoomlbl").textContent = Math.round(z * 100) + "%";
+      canvas.calcOffset(); canvas.requestRenderAll();
+    }
+    const fit = () => {
+      const r = stage.getBoundingClientRect();
+      fitZ = Math.min((r.width - 24) / design.W, (r.height - 24) / design.H);
+      setZoomLevel(fitZ);
+      stage.scrollLeft = 0; stage.scrollTop = 0;
     };
+    const onResize = () => { if (atFit) fit(); else canvas.calcOffset(); };
     fit();
-    window.addEventListener("resize", fit);
+    window.addEventListener("resize", onResize);
+    stage.addEventListener("scroll", () => canvas.calcOffset(), { passive: true });
+    root.querySelectorAll("[data-z]").forEach(b => b.onclick = () => {
+      const k = b.dataset.z;
+      if (k === "in") setZoomLevel(ed.zoom * 1.25);
+      if (k === "out") setZoomLevel(ed.zoom / 1.25);
+      if (k === "fit") fit();
+      if (k === "pct") setZoomLevel(Math.min(1, maxZ()));
+      if (k === "pan") {
+        panMode = !panMode; b.classList.toggle("on", panMode);
+        canvas.skipTargetFind = panMode; canvas.selection = !panMode;
+        if (panMode) { canvas.discardActiveObject(); canvas.requestRenderAll(); }
+        stage.classList.toggle("panning", panMode);
+      }
+    });
+    // Ctrl + rueda (o pellizcar en el trackpad): zoom donde está el puntero
+    stage.addEventListener("wheel", e => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      setZoomLevel(ed.zoom * Math.exp(-e.deltaY * 0.0025), e.clientX, e.clientY);
+    }, { passive: false });
+    // mano: arrastrar la vista con el mouse o un dedo
+    let drag = null;
+    stage.addEventListener("pointerdown", e => {
+      if (!panMode) return;
+      drag = { x: e.clientX, y: e.clientY, l: stage.scrollLeft, t: stage.scrollTop };
+      stage.setPointerCapture(e.pointerId);
+    });
+    stage.addEventListener("pointermove", e => {
+      if (!drag) return;
+      stage.scrollLeft = drag.l - (e.clientX - drag.x); stage.scrollTop = drag.t - (e.clientY - drag.y);
+    });
+    stage.addEventListener("pointerup", () => { drag = null; });
+    // dos dedos: pellizcar = zoom, arrastrar = mover la vista (sin tocar los elementos)
+    let pinch = null;
+    const mid = t => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2, d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) });
+    stage.addEventListener("touchstart", e => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault(); e.stopPropagation();
+      const m = mid(e.touches);
+      pinch = { ...m, z: ed.zoom, l: stage.scrollLeft, t: stage.scrollTop };
+      canvas.skipTargetFind = true;
+      if (canvas._currentTransform) { canvas._currentTransform = null; }
+      canvas.discardActiveObject(); canvas.requestRenderAll();
+    }, { passive: false, capture: true });
+    stage.addEventListener("touchmove", e => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault(); e.stopPropagation();
+      const m = mid(e.touches);
+      setZoomLevel(pinch.z * m.d / pinch.d, m.x, m.y);
+      stage.scrollLeft -= m.x - (pinch.lx ?? m.x); stage.scrollTop -= m.y - (pinch.ly ?? m.y);
+      pinch.lx = m.x; pinch.ly = m.y;
+    }, { passive: false, capture: true });
+    stage.addEventListener("touchend", e => {
+      if (!pinch || e.touches.length >= 2) return;
+      pinch = null; canvas.skipTargetFind = panMode;
+    }, { capture: true });
     await build(canvas, design);
     snapshot();
 
@@ -1290,7 +1374,7 @@
     let toastT = null;
     function toast(t) {
       let el = root.querySelector(".ed-toast");
-      if (!el) { el = document.createElement("div"); el.className = "ed-toast"; el.setAttribute("role", "status"); stage.appendChild(el); }
+      if (!el) { el = document.createElement("div"); el.className = "ed-toast"; el.setAttribute("role", "status"); root.querySelector(".ed-stagew").appendChild(el); }
       el.textContent = t; el.classList.add("on");
       clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), 2800);
     }
@@ -1301,6 +1385,9 @@
       const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
       if (mod && k === "z" && !typing) { e.preventDefault(); actions[e.shiftKey ? "redo" : "undo"](); return; }
       if (mod && k === "y" && !typing) { e.preventDefault(); actions.redo(); return; }
+      if (mod && (k === "+" || k === "=")) { e.preventDefault(); setZoomLevel(ed.zoom * 1.25); return; }
+      if (mod && k === "-") { e.preventDefault(); setZoomLevel(ed.zoom / 1.25); return; }
+      if (mod && k === "0") { e.preventDefault(); fit(); return; }
       if (mod && k === "c" && !typing && o) { e.preventDefault(); copy(); return; }
       if (mod && k === "v" && !typing) { e.preventDefault(); paste(); return; }
       if (mod && k === "d" && !typing && o) { e.preventDefault(); actions.dup(); return; }
@@ -1312,7 +1399,12 @@
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); actions.del(); }
       const step = e.shiftKey ? 10 : 1;
       const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
-      if (mv && !o.bloqueado) { e.preventDefault(); o.set({ left: o.left + mv[0], top: o.top + mv[1] }); o.setCoords(); canvas.requestRenderAll(); snapshot(); }
+      if (mv && !o.bloqueado) {
+        e.preventDefault(); o.set({ left: o.left + mv[0], top: o.top + mv[1] }); o.setCoords(); canvas.requestRenderAll(); snapshot();
+        // los números de Posición acompañan el movimiento
+        const r = o.getBoundingRect(true, true), nx = $(".ed-panel [data-n=x]"), ny = $(".ed-panel [data-n=y]");
+        if (nx) nx.value = Math.round(r.left); if (ny) ny.value = Math.round(r.top);
+      }
     }
     document.addEventListener("keydown", onKey);
 
@@ -1336,7 +1428,7 @@
     }
     function close() {
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", fit);
+      window.removeEventListener("resize", onResize);
       canvas.dispose(); root.remove(); ed = null;
     }
 
