@@ -179,6 +179,15 @@
   .pg-pop button:disabled { opacity: .35; cursor: default; }
   .pg-sub { font: 11px "DER Sub", sans-serif; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave); padding: 8px 10px 2px; border-top: 1px solid var(--borde); margin-top: 4px; }
   .pg-del { color: #b3261e !important; border-top: 1px solid var(--borde) !important; margin-top: 4px; }
+  /* plantillas con miniatura */
+  .tpl-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; }
+  .tpl-thumbs label { margin: 0; position: relative; display: grid; gap: 4px; cursor: pointer; font: 12px "DER Sub", sans-serif; text-align: center; color: var(--oscuro); }
+  .tpl-thumbs input { position: absolute; opacity: 0; pointer-events: none; }
+  .tpl-thumbs img { width: 100%; aspect-ratio: 4/5; object-fit: cover; border-radius: 8px; border: 2px solid var(--borde); background: var(--claro); display: block; }
+  .tpl-thumbs label:has(input:checked) img { border-color: var(--naranja); box-shadow: 0 0 0 3px #ffd3b8; }
+  .tpl-thumbs label:has(input:checked) span { color: var(--naranja); }
+  .tpl-thumbs span { line-height: 1.2; }
+  @media (max-width: 600px) { .tpl-thumbs { grid-template-columns: repeat(3, 1fr); } }
 </style>
 </head>
 <body>
@@ -216,9 +225,10 @@
       <textarea name="cuerpo" placeholder="Un texto corto (opcional)"></textarea>
 
       <label>Plantilla</label>
-      <div class="chips">
+      <div class="tpl-thumbs">
         {% for key, name in templates.items() %}
-        <label><input type="radio" name="plantilla" value="{{ key }}" {% if loop.first %}checked{% endif %}> {{ name }}</label>
+        <label><input type="radio" name="plantilla" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+          <img src="/plantilla-muestra/{{ key }}.jpg" alt="" loading="lazy"><span>{{ name }}</span></label>
         {% endfor %}
       </div>
       <p class="hint" id="plantillaAyuda"></p>
@@ -339,9 +349,10 @@
       <input type="text" name="subtitulo" placeholder="Talleres · Córdoba 2026">
 
       <label>Estilo de las fotos</label>
-      <div class="chips">
+      <div class="tpl-thumbs">
         {% for key, name in photo_styles.items() %}
-        <label><input type="radio" name="estilo" value="{{ key }}" {% if loop.first %}checked{% endif %}> {{ name }}</label>
+        <label><input type="radio" name="estilo" value="{{ key }}" {% if loop.first %}checked{% endif %}>
+          <img src="/plantilla-muestra/{{ key }}.jpg" alt="" loading="lazy"><span>{{ name }}</span></label>
         {% endfor %}
       </div>
       <div class="row">

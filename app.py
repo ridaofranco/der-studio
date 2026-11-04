@@ -936,6 +936,71 @@ def api_borrar_logo(name):
     return jsonify(estado=brand.status())
 
 
+# --- Miniaturas de las plantillas (para elegir mirando) ---------------------------------------
+
+MUESTRA = graphics.Content(title="Tu título *acá*", subtitle="Un subtítulo corto",
+                           body="contacto@somosder.com.ar\nwww.somosder.ar")
+MUESTRA_TEXTO = {"dato": graphics.Content(title="+40K", subtitle="asistentes", body="En 3 días de evento."),
+                 "lista": graphics.Content(title="Qué *hacemos*", body="Accesos\nTécnica\nStaff"),
+                 "agenda": graphics.Content(title="Tu *evento*", subtitle="15 NOV", body="Lugar · 21 hs"),
+                 "cita": graphics.Content(title="La producción buena es la que *nadie nota*", subtitle="Nombre, cargo")}
+
+
+def _fotos_muestra(n: int) -> list[Path]:
+    """Fotos de ejemplo sintéticas (luces de evento): el repo es público, no van fotos de clientes."""
+    import numpy as np
+    from PIL import Image as PILImage, ImageFilter
+    d = OUT_DIR / ".muestras" / "fotos"
+    d.mkdir(parents=True, exist_ok=True)
+    out = []
+    for k in range(n):
+        f = d / f"foto{k}.jpg"
+        if not f.exists():
+            rng = np.random.default_rng(k + 3)
+            w, h = 900, 1100 if k % 2 == 0 else 700
+            img = PILImage.new("RGB", (w, h), (24 + 8 * k, 22, 30 + 6 * k))
+            dr = __import__("PIL.ImageDraw", fromlist=["ImageDraw"]).Draw(img)
+            for _ in range(14):
+                x, y, r = rng.integers(0, w), rng.integers(0, int(h * 0.6)), rng.integers(30, 140)
+                col = [(255, 92, 0), (245, 139, 34), (255, 210, 150), (90, 120, 255)][rng.integers(0, 4)]
+                dr.ellipse([x - r, y - r, x + r, y + r], fill=col)
+            img = img.filter(ImageFilter.GaussianBlur(38))
+            dr = __import__("PIL.ImageDraw", fromlist=["ImageDraw"]).Draw(img)
+            for j in range(9):   # siluetas de público
+                cx, r = int(w * (j + 0.5) / 9 + rng.integers(-20, 20)), int(rng.integers(55, 80))
+                dr.ellipse([cx - r * 0.5, h - r * 2.6, cx + r * 0.5, h - r * 1.6], fill=(12, 10, 14))
+                dr.rectangle([cx - r * 0.75, h - r * 1.7, cx + r * 0.75, h], fill=(12, 10, 14))
+            img.save(f, quality=85)
+        out.append(f)
+    return out
+
+
+@app.get("/plantilla-muestra/<tpl>.jpg")
+def plantilla_muestra(tpl):
+    """Miniatura de cómo queda cada plantilla (post 4:5), con texto y fotos de ejemplo. Se cachea
+    según la versión de la app y el logo cargado; se rehace sola si cambia alguno."""
+    from PIL import Image as PILImage
+    if tpl not in graphics.RENDERERS:
+        abort(404)
+    logos = brand.LOGOS_DIR
+    firma = f"{updater.local_version()}-{int(max([p.stat().st_mtime for p in logos.glob('*')] or [0]))}-{len(brand.list_patrones())}"
+    d = OUT_DIR / ".muestras"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{tpl}-{firma[:24]}.jpg"
+    if not f.exists():
+        n = {"collage": 4, "comparar": 2, "mosaico": 7}.get(tpl, 1)
+        fotos = _fotos_muestra(n) if tpl in graphics.PHOTO_TEMPLATES or tpl in ("dato", "agenda", "hablemos") else []
+        tmp = d / "tmp"
+        tmp.mkdir(exist_ok=True)
+        content = MUESTRA_TEXTO.get(tpl, MUESTRA)
+        des = graphics.generate(tpl, ["post"], fotos, content, tmp)[0]
+        compose.save_final(des, tmp)
+        img = PILImage.open(tmp / f"{des['name']}.jpg")
+        img.thumbnail((300, 375))
+        img.save(f, quality=82)
+    return send_from_directory(d, f.name, max_age=3600)
+
+
 @app.get("/patron/<name>")
 def patron(name):
     return send_from_directory(brand.PATRONES_DIR, secure_filename(name), max_age=3600)
