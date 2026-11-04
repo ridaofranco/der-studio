@@ -38,7 +38,19 @@
   const loadImage = (url, opts = {}) =>
     new Promise((ok, fail) => fabric.Image.fromURL(url, img => img ? ok(img) : fail(url), opts));
 
-  async function layerToObject(l) {
+  async function layerToObject(l, design) {
+    const common = { angle: l.angle || 0, opacity: l.opacity ?? 1 };
+    if (l.type === "photo") {
+      // foto de la plantilla: elemento con todas las herramientas de foto (recortar, marco, filtros)
+      const dir = (design.base || "").split("?")[0].replace(/\/[^/]*$/, "");
+      const o = await loadImage(dir + "/" + l.src_rel, { crossOrigin: "anonymous" });
+      o.set({ name: l.name || "Foto", left: l.x, top: l.y, ...common });
+      o.foto = { marco: "ninguno", zoom: 1, px: 0, py: l.py || 0, filtro: "ninguno", aspecto: l.w / l.h, radio: l.radius || 0 };
+      o.scale(l.w / (o.getElement().naturalWidth || o.width));
+      applyPhoto(o);
+      o.set({ left: l.x, top: l.y });
+      return o;
+    }
     if (l.type === "text") {
       return new fabric.Textbox(l.text, {
         left: l.x, top: l.y, width: l.w + Math.ceil(l.size * 0.15), fontFamily: l.family,
@@ -47,11 +59,12 @@
       });
     }
     if (l.type === "rect") {
-      return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name, forma: l.rx ? "rect" : undefined,
-        rx: l.rx || 0, ry: l.rx || 0, stroke: l.stroke || null, strokeWidth: l.strokeWidth || 0 });
+      return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name, forma: "rect",
+        rx: l.rx || 0, ry: l.rx || 0, stroke: l.stroke || null, strokeWidth: l.strokeWidth || 0, ...common,
+        shadow: l.shadow ? new fabric.Shadow({ color: "rgba(0,0,0,0.3)", blur: 28, offsetX: 10, offsetY: 16 }) : null });
     }
     const img = await loadImage(l.src);
-    img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null });
+    img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null, ...common });
     return img;
   }
 
@@ -152,7 +165,8 @@
     const dispW = o.getScaledWidth();
     o.set({ cropX: (nw - cw) * (0.5 + 0.5 * (f.px || 0)), cropY: (nh - ch) * (0.5 + 0.5 * (f.py || 0)), width: cw, height: ch });
     o.set({ scaleX: dispW / cw, scaleY: dispW / cw });
-    o.clipPath = clipFor(f.marco, cw, ch) || undefined;
+    o.clipPath = clipFor(f.marco, cw, ch) || (f.radio ? new fabric.Rect({ width: cw, height: ch, rx: f.radio / o.scaleX, ry: f.radio / o.scaleX,
+      originX: "center", originY: "center", left: 0, top: 0 }) : undefined);
     o.objectCaching = false;   // el caché no se entera de los cambios de recorte y dejaba pedazos afuera del marco
     o.filters = photoFilters(f);
     o.applyFilters();
@@ -184,7 +198,7 @@
       await new Promise(ok => canvas.loadFromJSON({ ...design.fabric, backgroundImage: undefined }, ok));
       canvas.setBackgroundImage(bg, () => {});
     } else {
-      for (const l of design.layers) canvas.add(await layerToObject(l));
+      for (const l of design.layers) canvas.add(await layerToObject(l, design));
     }
     canvas.getObjects().forEach(o => { if (o.bloqueado) applyLock(o, true); if (o.foto) o.objectCaching = false; });
     // color de fondo: se ve donde la base es transparente (todo menos las fotos)

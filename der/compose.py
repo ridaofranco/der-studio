@@ -59,6 +59,37 @@ def _text(d: ImageDraw.ImageDraw, layer: dict) -> None:
             start = end
 
 
+def _place(img: Image.Image, tile: Image.Image, x: float, y: float, angle: float = 0, opacity: float = 1.0) -> Image.Image:
+    """Pega `tile` en (x, y) girado `angle` grados alrededor de su esquina superior izquierda (como Fabric)."""
+    import math
+    tile = tile.convert("RGBA")
+    if opacity < 1:
+        tile.putalpha(tile.getchannel("A").point(lambda a: int(a * opacity)))
+    if angle:
+        w, h = tile.size
+        r = math.radians(angle)
+        pts = [(px * math.cos(r) - py * math.sin(r), px * math.sin(r) + py * math.cos(r)) for px, py in ((0, 0), (w, 0), (w, h), (0, h))]
+        tile = tile.rotate(-angle, expand=True, resample=Image.BICUBIC)
+        x, y = x + min(p[0] for p in pts), y + min(p[1] for p in pts)
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    layer.paste(tile, (round(x), round(y)), tile)
+    return Image.alpha_composite(img, layer)
+
+
+def _photo(layer: dict, lote: Path) -> Image.Image:
+    """Recorte de la foto igual que el editor: llena el cuadro, centrada (o hacia arriba/abajo)."""
+    from PIL import ImageOps
+    src = Image.open(lote / layer["src_rel"]).convert("RGB")
+    w, h = max(1, round(layer["w"])), max(1, round(layer["h"]))
+    py = layer.get("py", 0.0)
+    out = ImageOps.fit(src, (w, h), Image.LANCZOS, centering=(0.5, 0.5 + 0.5 * py)).convert("RGBA")
+    if layer.get("radius"):
+        mask = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=layer["radius"], fill=255)
+        out.putalpha(mask)
+    return out
+
+
 def compose(design: dict, base_path: Path) -> Image.Image:
     """Devuelve la pieza terminada (RGB) a tamaño completo."""
     W, H = design["W"], design["H"]
@@ -73,15 +104,29 @@ def compose(design: dict, base_path: Path) -> Image.Image:
         if t == "text":
             _text(d, layer)
         elif t == "rect":
-            box = [layer["x"], layer["y"], layer["x"] + layer["w"] - 1, layer["y"] + layer["h"] - 1]
+            w, h = max(1, round(layer["w"])), max(1, round(layer["h"]))
+            sw = layer.get("strokeWidth", 0) or 0
+            tile = Image.new("RGBA", (w + sw, h + sw), (0, 0, 0, 0))
             fill = None if str(layer["color"]).startswith("rgba(0,0,0,0") else layer["color"]
-            d.rounded_rectangle(box, radius=layer.get("rx", 0), fill=fill,
-                                outline=layer.get("stroke"), width=layer.get("strokeWidth", 0) or 0)
+            ImageDraw.Draw(tile).rounded_rectangle([sw / 2, sw / 2, w - 1 + sw / 2, h - 1 + sw / 2], radius=layer.get("rx", 0),
+                                                   fill=fill, outline=layer.get("stroke"), width=sw)
+            if layer.get("shadow"):
+                from PIL import ImageFilter
+                sh = Image.new("RGBA", tile.size, (0, 0, 0, 0))
+                sh.putalpha(tile.getchannel("A").point(lambda a: int(a * 0.3)))
+                pad = 40
+                big = Image.new("RGBA", (sh.width + 2 * pad, sh.height + 2 * pad), (0, 0, 0, 0))
+                big.paste(sh, (pad, pad))
+                img = _place(img, big.filter(ImageFilter.GaussianBlur(14)), layer["x"] - pad + 10, layer["y"] - pad + 16, layer.get("angle", 0))
+            img = _place(img, tile, layer["x"] - sw / 2, layer["y"] - sw / 2, layer.get("angle", 0), layer.get("opacity", 1.0))
+            d = ImageDraw.Draw(img)
+        elif t == "photo":
+            img = _place(img, _photo(layer, base_path.parent), layer["x"], layer["y"], layer.get("angle", 0), layer.get("opacity", 1.0))
+            d = ImageDraw.Draw(img)
         else:
             el = _image_for(layer["src"]).convert("RGBA").resize((max(1, round(layer["w"])), max(1, round(layer["h"]))),
                                                                  Image.LANCZOS)
-            img.alpha_composite(el, (round(layer["x"]), round(layer["y"]))) if layer["x"] >= 0 and layer["y"] >= 0 \
-                else img.paste(el, (round(layer["x"]), round(layer["y"])), el)
+            img = _place(img, el, layer["x"], layer["y"], layer.get("angle", 0), layer.get("opacity", 1.0))
             d = ImageDraw.Draw(img)
     return img.convert("RGB")
 

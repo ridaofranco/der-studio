@@ -318,6 +318,7 @@ class Design:
         self.bg = bg
         self.base = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
         self.layers: list[dict] = []
+        self.pending: dict[str, Image.Image] = {}   # fotos de las capas, se guardan con la base
 
     def over(self, img: Image.Image, xy) -> None:
         """Pega una imagen con transparencia respetando el alfa (sombras, cintas)."""
@@ -377,13 +378,39 @@ class Design:
                             "x": round(x), "y": round(y), "w": round(width), "h": round(h)})
         return width, h
 
-    def rect(self, x, y, w, h, color, name="Barra", radius=0, stroke=None, stroke_width=0):
+    def rect(self, x, y, w, h, color, name="Barra", radius=0, stroke=None, stroke_width=0, angle=0, opacity=1.0,
+             shadow=False):
         layer = {"type": "rect", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h), "color": color}
         if radius:
             layer["rx"] = round(radius)
         if stroke:
             layer.update(stroke=stroke, strokeWidth=round(stroke_width))
+        if angle:
+            layer["angle"] = angle
+        if opacity < 1:
+            layer["opacity"] = opacity
+        if shadow:
+            layer["shadow"] = True
         self.layers.append(layer)
+
+    def photo(self, img, x, y, w, h, name="Foto", radius=0, angle=0):
+        """Foto como capa editable (se mueve, se recorta, se le pone marco o filtro en el editor)."""
+        key = _photo_key(img)
+        self.pending[key] = img
+        layer = {"type": "photo", "name": name, "ref": key, "x": round(x), "y": round(y), "w": round(w), "h": round(h),
+                 "py": {"arriba": -0.6, "abajo": 0.6}.get(self.c.focus, 0.0)}
+        if radius:
+            layer["radius"] = round(radius)
+        if angle:
+            layer["angle"] = angle
+        self.layers.append(layer)
+
+    def fade(self, x, y, w, h, forma="abajo", color=DARK, opacity=0.9, name="Degradé"):
+        """Degradé de color como capa (se puede achicar, mover o borrar)."""
+        self.layers.append({"type": "image", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h),
+                            "opacity": opacity,
+                            "src": element_url("difuminado", forma=forma, w=max(8, round(w / 2)), h=max(8, round(h / 2)),
+                                               color=color.lstrip("#"))})
 
     def image(self, src, x, y, w, h, name="Imagen"):
         self.layers.append({"type": "image", "name": name, "src": src, "x": round(x), "y": round(y), "w": round(w), "h": round(h)})
@@ -416,7 +443,20 @@ class Design:
         return {"fmt": self.fmt, "W": self.W, "H": self.H, "bg": self.bg, "layers": self.layers}
 
     def save_base(self, path_stem: Path) -> str:
-        """JPG si la base es opaca (foto a sangre); PNG si deja ver el color de fondo."""
+        """JPG si la base es opaca (foto a sangre); PNG si deja ver el color de fondo.
+        Las fotos de las capas se guardan en <lote>/capas/ (una vez por foto)."""
+        if self.pending:
+            capas = path_stem.parent / "capas"
+            capas.mkdir(exist_ok=True)
+            for key, img in self.pending.items():
+                f = capas / f"{key}.jpg"
+                if not f.exists():
+                    im = img.copy()
+                    im.thumbnail((2000, 2000))
+                    im.convert("RGB").save(f, "JPEG", quality=90)
+            for l in self.layers:
+                if l.get("type") == "photo":
+                    l["src_rel"] = f"capas/{l['ref']}.jpg"
         base = self.base
         if base.mode == "RGBA" and base.getchannel("A").getextrema()[0] < 255:
             out = path_stem.with_name(path_stem.name + ".base.png")
@@ -425,6 +465,11 @@ class Design:
             out = path_stem.with_name(path_stem.name + ".base.jpg")
             base.convert("RGB").save(out, "JPEG", quality=95, subsampling=0)
         return out.name
+
+
+def _photo_key(img: Image.Image) -> str:
+    import hashlib
+    return hashlib.md5(img.resize((48, 48)).tobytes() + repr(img.size).encode()).hexdigest()[:14]
 
 
 def logo_url(key: str) -> str:
@@ -447,13 +492,14 @@ def _has_text(c):
 
 
 def tpl_impacto(fmt, photos, c, first=True):
-    D = Design(fmt, c)
+    D = Design(fmt, c, DARK)
     W, H, s = D.W, D.H, D.s
-    D.base = cover(photos[0], W, H, c.focus)
+    D.photo(photos[0], 0, 0, W, H, "Foto de fondo")
     top, bottom = _safe(fmt, H)
     m = 80 * s
     has_text = first and _has_text(c)
-    bottom_gradient(D.base, 0.35 if has_text else 0.7, 235 if has_text else 160)
+    start = 0.35 if has_text else 0.7
+    D.fade(0, H * start, W, H * (1 - start), "abajo", DARK, 0.95 if has_text else 0.65)
     D.logo("on_dark", 190 * s, m, top)
     D.bracket(W - m - 70 * s, top, 70 * s, 8 * s, ORANGE, "tr")
     if has_text:
@@ -469,7 +515,6 @@ def tpl_impacto(fmt, photos, c, first=True):
 def tpl_marco(fmt, photos, c, first=True):
     D = Design(fmt, c, LIGHT)
     W, H, s = D.W, D.H, D.s
-    d = ImageDraw.Draw(D.base)
     top, bottom = _safe(fmt, H)
     m = 80 * s
     has_text = first and _has_text(c)
@@ -479,8 +524,8 @@ def tpl_marco(fmt, photos, c, first=True):
     photo_bottom = H - bottom - (text_h + 70 * s if has_text else 40 * s)
     pw, ph = int(W - 2 * m - 24 * s), int(photo_bottom - photo_top)
     off = int(24 * s)
-    d.rectangle([m + off, photo_top + off, m + off + pw, photo_top + off + ph], fill=ORANGE)
-    D.base.paste(cover(photos[0], pw, ph, c.focus), (int(m), int(photo_top)))
+    D.rect(m + off, photo_top + off, pw, ph, ORANGE, "Bloque naranja")
+    D.photo(photos[0], m, photo_top, pw, ph)
     D.logo("on_light", 170 * s, m, top)
     D.dots(W - m - 4 * 26 * s, top + 12 * s, 5, 3, 26 * s, 4 * s, ORANGE)
     if has_text:
@@ -497,7 +542,8 @@ def tpl_banda(fmt, photos, c, first=True):
     box_w = W - 2 * m
     text_h = D.measure(box_w, H * 0.35, 84) if has_text else 0
     band_h = int(max(H * 0.22, text_h + bottom + 110 * s)) if has_text else int(bottom + 140 * s)
-    D.base.paste(cover(photos[0], W, H - band_h, c.focus), (0, 0))
+    D.photo(photos[0], 0, 0, W, H - band_h)
+    D.rect(0, H - band_h, W, band_h, ORANGE, "Banda")
     tab_w, tab_h = 300 * s, 96 * s
     D.rect(W - m - tab_w, H - band_h - tab_h / 2, tab_w, tab_h, DARK, "Pestaña")
     D.logo("on_dark", 200 * s, W - m - tab_w / 2, H - band_h - 30 * s, "mt")
@@ -560,7 +606,7 @@ def tpl_collage(fmt, photos, c, first=True):
         x0, y0 = gx + int(cx * gw), gy + int(cy * gh)
         w = int(cw * gw) - (g if cx + cw < 1 else 0)
         h = int(ch * gh) - (g if cy + ch < 1 else 0)
-        D.base.paste(cover(photo, w, h, c.focus), (x0, y0))
+        D.photo(photo, x0, y0, w, h)
     D.rect(0, H - strip_h, W, 10 * s, ORANGE, "Línea")
     if has_text:
         D.text_block(m, H - strip_h + 60 * s, box_w - 220 * s, H * 0.25, WHITE, ORANGE, LIGHT, title_size=76)
@@ -607,9 +653,8 @@ def tpl_dato(fmt, photos, c, first=True):
     top, bottom = _safe(fmt, H)
     m = 90 * s
     if photos:
-        D.base = cover(photos[0], W, H, c.focus)
-        shade = Image.new("RGB", (W, H), DARK_RGB)
-        D.base = Image.blend(D.base.convert("RGB"), shade, 0.72)
+        D.photo(photos[0], 0, 0, W, H, "Foto de fondo")
+        D.rect(0, 0, W, H, DARK, "Oscurecer", opacity=0.72)
     D.logo("on_dark", 180 * s, m, top)
     D.bracket(W - m - 80 * s, top, 80 * s, 9 * s, ORANGE, "tr")
     box_w = W - 2 * m
@@ -689,14 +734,14 @@ def tpl_comparar(fmt, photos, c, first=True):
     line = int(10 * s)
     if vertical:
         h1 = (area_h - line) // 2
-        D.base.paste(cover(pair[0], W, h1, c.focus), (0, 0))
-        D.base.paste(cover(pair[1], W, area_h - h1 - line, c.focus), (0, h1 + line))
+        D.photo(pair[0], 0, 0, W, h1, "Foto antes")
+        D.photo(pair[1], 0, h1 + line, W, area_h - h1 - line, "Foto después")
         D.rect(0, h1, W, line, ORANGE, "Divisor")
         tags = [(m, top), (m, h1 + line + 40 * s)]
     else:
         w1 = (W - line) // 2
-        D.base.paste(cover(pair[0], w1, area_h, c.focus), (0, 0))
-        D.base.paste(cover(pair[1], W - w1 - line, area_h, c.focus), (w1 + line, 0))
+        D.photo(pair[0], 0, 0, w1, area_h, "Foto antes")
+        D.photo(pair[1], w1 + line, 0, W - w1 - line, area_h, "Foto después")
         D.rect(w1, 0, line, area_h, ORANGE, "Divisor")
         tags = [(40 * s, top), (w1 + line + 40 * s, top)]
     for (tx, ty), label, bg, fg in zip(tags, ("ANTES", "DESPUÉS"), (DARK, ORANGE), (WHITE, WHITE)):
@@ -718,9 +763,8 @@ def tpl_agenda(fmt, photos, c, first=True):
     m = 80 * s
     split = int(H * (0.5 if fmt == "historia" else 0.46))
     if photos:
-        top_photo = cover(photos[0], W, split, c.focus)
-        bottom_gradient(top_photo, 0.25, 120)
-        D.base.paste(top_photo, (0, 0))
+        D.photo(photos[0], 0, 0, W, split)
+        D.fade(0, split * 0.25, W, split * 0.75, "abajo", DARK, 0.47)
     else:
         D.dots(W - m - 8 * 30 * s, top + 120 * s, 9, 6, 30 * s, 4 * s, "#5a5a5a")
         D.bracket(m, top + 100 * s, 120 * s, 10 * s, ORANGE, "tl")
@@ -764,21 +808,20 @@ def tpl_cinta(fmt, photos, c, first=True):
     pw = int(W - 2 * m - 40 * s)
     ph = int(min(area_bot - area_top - 60 * s, pw * 1.25))
     border = int(26 * s)
-    card = Image.new("RGB", (pw + 2 * border, ph + 2 * border + int(40 * s)), "#ffffff")
-    card.paste(cover(photos[0], pw, ph, c.focus), (border, border))
-    angle = -2.5 if hash(c.title) % 2 == 0 else 2.5
-    shadow = Image.new("RGBA", card.size, (0, 0, 0, 70)).rotate(angle, expand=True, resample=Image.BICUBIC)
-    rot = card.convert("RGBA").rotate(angle, expand=True, resample=Image.BICUBIC)
-    cx = (W - rot.width) // 2
-    cy = int(area_top + (area_bot - area_top - rot.height) / 2)
-    from PIL import ImageFilter
-    D.over(shadow.filter(ImageFilter.GaussianBlur(14 * s)), (cx + int(12 * s), cy + int(18 * s)))
-    D.over(rot, (cx, cy))
-    # cintas (en la base, semitransparentes y giradas)
-    tape = Image.new("RGBA", (int(230 * s), int(62 * s)), (255, 92, 0, 215))
-    for tx, ty, ta in ((cx + rot.width - 270 * s, cy - 30 * s, -24), (cx + 30 * s, cy + rot.height - 120 * s, 28)):
-        t = tape.rotate(ta, expand=True, resample=Image.BICUBIC)
-        D.over(t, (tx, ty))
+    cw, ch = pw + 2 * border, ph + 2 * border + int(40 * s)
+    angle = -2.5 if sum(map(ord, c.title or "")) % 2 == 0 else 2.5
+    cx = (W - cw) / 2
+    cy = area_top + (area_bot - area_top - ch) / 2
+    import math
+    rad = math.radians(angle)
+    rot = lambda dx, dy: (cx + dx * math.cos(rad) - dy * math.sin(rad), cy + dx * math.sin(rad) + dy * math.cos(rad))  # noqa: E731
+    D.rect(cx, cy, cw, ch, "#ffffff", "Tarjeta", angle=angle, shadow=True)
+    px, py = rot(border, border)
+    D.photo(photos[0], px, py, pw, ph, angle=angle)
+    tw, th = 230 * s, 62 * s
+    for (dx, dy), ta in (((cw - 250 * s, -20 * s), angle - 24), ((20 * s, ch - 90 * s), angle + 28)):
+        tx, ty = rot(dx, dy)
+        D.rect(tx, ty, tw, th, ORANGE, "Cinta", angle=ta, opacity=0.85)
     if has_text:
         D.text_block(m, H - bottom - text_h, box_w, H * 0.26, DARK, ORANGE, DARK, title_size=80)
     else:
@@ -819,22 +862,18 @@ def tpl_hablemos(fmt, photos, c, first=True):
     pill_w, pill_h = 470 * s, 108 * s
     py = H - bottom - pill_h * 2 - 40 * s
     if photos:
-        # foto tipo sticker: girada, con borde naranja grueso y sombra, abajo a la derecha
+        # foto tipo sticker: girada, con marco naranja grueso y sombra, saliendo por abajo a la derecha
+        import math
         pw = int(W * (0.42 if fmt == "historia" else 0.46))
         ph = int(pw * 1.28)
-        card = _rounded(cover(photos[0], pw, ph, c.focus), int(26 * s))
-        b = int(16 * s)
-        frame = Image.new("RGBA", (pw + 2 * b, ph + 2 * b), (0, 0, 0, 0))
-        ImageDraw.Draw(frame).rounded_rectangle([0, 0, frame.width - 1, frame.height - 1], radius=int(36 * s), fill=ORANGE)
-        frame.paste(card, (b, b), card)
-        rot = frame.rotate(-9, expand=True, resample=Image.BICUBIC)
-        from PIL import ImageFilter
-        sh = Image.new("RGBA", rot.size, (0, 0, 0, 0))
-        sh.putalpha(rot.getchannel("A").point(lambda a: int(a * 0.35)))
-        # sale un poco por el borde derecho y por abajo, como el sticker de la pieza de Canva
-        fx, fy = W - rot.width * 0.9, H - rot.height * (0.82 if fmt == "historia" else 0.88) - (bottom * 0.6 if fmt == "historia" else 0)
-        D.over(sh.filter(ImageFilter.GaussianBlur(18 * s)), (fx + 10 * s, fy + 18 * s))
-        D.over(rot, (fx, fy))
+        b = 16 * s
+        ang = -9
+        fx = W - (pw + 2 * b) * 0.86
+        fy = H - (ph + 2 * b) * (0.8 if fmt == "historia" else 0.86) - (bottom * 0.6 if fmt == "historia" else 0)
+        D.rect(fx, fy, pw + 2 * b, ph + 2 * b, ORANGE, "Marco sticker", radius=36 * s, angle=ang, shadow=True)
+        r = math.radians(ang)
+        D.photo(photos[0], fx + b * math.cos(r) - b * math.sin(r), fy + b * math.sin(r) + b * math.cos(r), pw, ph,
+                radius=26 * s, angle=ang)
     if mail:
         D.rect(m, py, pill_w, pill_h, DARK, "Píldora mail", radius=pill_h / 2)
         fs, ln = _fit_lines(mail, "subtitle", pill_w - 60 * s, pill_h * 0.6, int(40 * s), int(20 * s), 1.0, max_lines=1)
@@ -881,8 +920,7 @@ def tpl_mosaico(fmt, photos, c, first=True):
         y = y0
         for ph, wgt in zip(col, pesos):
             hh = alto * wgt / sum(pesos)
-            card = _rounded(cover(ph, int(colw), int(hh), c.focus), r)
-            D.over(card, (m + ci * (colw + g), y))
+            D.photo(ph, m + ci * (colw + g), y, colw, hh, radius=r)
             y += hh + g
     return D
 
