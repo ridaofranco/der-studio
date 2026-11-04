@@ -256,11 +256,26 @@ def api_graficos():
         return jsonify(error=str(e)), 400
 
 
+def _editable(out: Path, d: dict) -> tuple[bool, bool]:
+    """(todo editable, se puede rearmar): una pieza es editable si su base no tiene nada pegado."""
+    from PIL import Image as PILImage
+    bf = out / d.get("base_file", "")
+    editable = False
+    if bf.suffix == ".png" and bf.exists():
+        with PILImage.open(bf) as im:
+            editable = im.mode == "RGBA" and im.getchannel("A").getextrema()[1] == 0
+    org = d.get("origen")
+    rehacible = (not editable) and bool(org) and all((out / "fotos" / n).exists() for n in org.get("fotos", []))
+    return editable, rehacible
+
+
 def _design_out(out: Path, d: dict) -> dict:
     """Agrega las direcciones de la base y de la pieza terminada (con marca de tiempo contra el caché)."""
     fin = out / f"{d['name']}.jpg"
     stamp = int(fin.stat().st_mtime) if fin.exists() else 0
-    return {**d, "base": _url(out / d["base_file"]), "final": _url(fin) + f"?t={stamp}"}
+    editable, rehacible = _editable(out, d)
+    return {**d, "base": _url(out / d["base_file"]), "final": _url(fin) + f"?t={stamp}",
+            "editable": editable, "rehacible": rehacible}
 
 
 def _run_graficos(job_id, template, formats, photos, content, out, first_only):
@@ -876,6 +891,31 @@ def api_pieza_orden():
     names = [secure_filename(n) for n in data.get("nombres") or []]
     (d / "orden.json").write_text(json.dumps(names), encoding="utf-8")
     return jsonify(orden=_orden(d))
+
+
+@app.post("/api/pieza/editable")
+def api_pieza_editable():
+    """Rearma una pieza de la versión anterior (foto y bandas pegadas al fondo) con todo como elementos.
+    La versión anterior queda de respaldo en <lote>/respaldo/."""
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    src = _pieza(d, str(data.get("nombre", "")))
+    org = src.get("origen")
+    if not org or not all((d / "fotos" / n).exists() for n in org.get("fotos", [])):
+        return jsonify(error="Esta pieza es anterior al 4/11 y no tiene guardadas sus fotos: generala de nuevo."), 400
+    bk = d / "respaldo"
+    bk.mkdir(exist_ok=True)
+    for f in (d / f"{src['name']}.json", d / f"{src['name']}.jpg", d / src["base_file"]):
+        if f.exists() and not (bk / f.name).exists():
+            shutil.copy(f, bk / f.name)
+    D = graphics.relayout(org, src.get("fmt") or "post", d / "fotos")
+    old_base = d / src["base_file"]
+    new = {"name": src["name"], "base_file": D.save_base(d / src["name"]), **D.to_dict(), "origen": org}
+    if old_base.name != new["base_file"]:
+        old_base.unlink(missing_ok=True)
+    (d / f"{src['name']}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
+    compose.save_final(new, d)
+    return jsonify(diseno=_design_out(d, new))
 
 
 @app.post("/api/pieza/formato")

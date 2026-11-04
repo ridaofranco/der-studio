@@ -65,6 +65,7 @@
     }
     const img = await loadImage(l.src);
     img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null, ...common });
+    if (l.bloqueado) img.bloqueado = true;   // se aplica el candado al armar el lienzo
     return img;
   }
 

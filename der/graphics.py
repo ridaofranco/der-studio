@@ -295,6 +295,8 @@ def element_png(kind: str, corner: str = "tl", size: int = 110, thick: int = 10,
     color = color if color.startswith("#") else "#" + color
     if kind == "difuminado":
         return difuminado(forma, w, h, color)
+    if kind == "textura":
+        return textura(Image.new("RGBA", (max(8, min(w, 2400)), max(8, min(h, 2400))), color), 1.0 if forma == "papel" else 1.3)
     if kind == "esquinero":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         corner_brackets(ImageDraw.Draw(img), (0, 0, size - 1, size - 1), size - 1, thick - 1, color, corner)
@@ -412,8 +414,16 @@ class Design:
                             "src": element_url("difuminado", forma=forma, w=max(8, round(w / 2)), h=max(8, round(h / 2)),
                                                color=color.lstrip("#"))})
 
-    def image(self, src, x, y, w, h, name="Imagen"):
-        self.layers.append({"type": "image", "name": name, "src": src, "x": round(x), "y": round(y), "w": round(w), "h": round(h)})
+    def image(self, src, x, y, w, h, name="Imagen", bloqueado=False):
+        layer = {"type": "image", "name": name, "src": src, "x": round(x), "y": round(y), "w": round(w), "h": round(h)}
+        if bloqueado:
+            layer["bloqueado"] = True
+        self.layers.append(layer)
+
+    def texture(self, color, fuerte=False):
+        """Textura de papel como capa al fondo (bloqueada para no moverla sin querer; se borra desde Capas)."""
+        self.image(element_url("textura", color=color.lstrip("#"), w=self.W, h=self.H, forma="fuerte" if fuerte else "papel"),
+                   0, 0, self.W, self.H, "Textura", bloqueado=True)
 
     def bar(self, x, y, color=ORANGE):
         self.rect(x, y, 90 * self.s, 10 * self.s, color, "Barra")
@@ -843,7 +853,7 @@ def tpl_hablemos(fmt, photos, c, first=True):
     """Fondo claro con textura, logo, bajada naranja, título grande, mail y web en píldoras, foto tipo sticker."""
     D = Design(fmt, c, LIGHT)
     W, H, s = D.W, D.H, D.s
-    D.base = textura(Image.new("RGBA", (W, H), LIGHT), 1.0).convert("RGBA")
+    D.texture(LIGHT)
     top, bottom = _safe(fmt, H)
     m = 80 * s
     _, lh = D.logo("on_light", 120 * s, m, top)
@@ -889,13 +899,11 @@ def tpl_mosaico(fmt, photos, c, first=True):
     """3 a 10 fotos con esquinas redondeadas en columnas, sobre naranja con textura y formas de marca."""
     D = Design(fmt, c, ORANGE)
     W, H, s = D.W, D.H, D.s
-    base = Image.new("RGBA", (W, H), ORANGE)
-    d = ImageDraw.Draw(base)
+    D.texture(ORANGE, fuerte=True)
     ghost = "#ff7a2e"
     R = int(W * 0.36)
-    for cx, cy in ((W * 0.15, H * 0.02), (W * 0.82, H * 0.5), (W * 0.2, H * 0.98)):
-        d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=ghost, width=int(70 * s))
-    D.base = textura(base, 1.3)
+    for k, (cx, cy) in enumerate(((W * 0.15, H * 0.02), (W * 0.82, H * 0.5), (W * 0.2, H * 0.98)), 1):
+        D.rect(cx - R, cy - R, 2 * R, 2 * R, "rgba(0,0,0,0)", f"Círculo de fondo {k}", radius=R, stroke=ghost, stroke_width=70 * s)
     top, bottom = _safe(fmt, H)
     m, g = int(46 * s), int(18 * s)
     y0 = m if fmt != "historia" else top - 60 * s
