@@ -59,6 +59,56 @@ def _text(d: ImageDraw.ImageDraw, layer: dict) -> None:
             start = end
 
 
+def _text_tile(layer: dict) -> tuple[Image.Image, float, float]:
+    """Texto girado, con contorno o transparencia: se dibuja aparte y se pega (como Fabric)."""
+    size = int(layer["size"])
+    sw = int(layer.get("strokeWidth") or 0)
+    lines = layer["text"].split("\n")
+    line_h = size * float(layer["lineGap"])
+    box_w = layer["w"] + int(-(-size * 0.15 // 1))
+    pad = sw + 4
+    W2, H2 = int(box_w + 2 * pad), int(len(lines) * line_h + size * 0.4 + 2 * pad)
+    local = {**layer, "x": pad, "y": pad}
+    def draw(fill_col, stroke=0, stroke_col=None):
+        t = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(t)
+        f = brand.font(layer["font"], size)
+        for li, line in enumerate(lines):
+            lw = f.getlength(line)
+            al = layer.get("align", "left")
+            x = pad + ((box_w - lw) / 2 if al == "center" else (box_w - lw) if al == "right" else 0)
+            y = pad + li * line_h + size * BASELINE
+            dd.text((x, y), line, font=f, fill=fill_col, anchor="ls", stroke_width=stroke, stroke_fill=stroke_col)
+        return t
+    color = layer["color"]
+    hueco = str(color).startswith("rgba(0,0,0,0")
+    if sw and layer.get("stroke"):
+        half = max(1, sw // 2)
+        if hueco:   # solo el contorno, centrado en el borde de la letra (mitad afuera, mitad adentro, como Fabric)
+            from PIL import ImageChops, ImageFilter
+            full = draw(layer["stroke"], half, layer["stroke"])
+            inner = draw("#000000").getchannel("A").filter(ImageFilter.MinFilter(2 * half + 1))
+            full.putalpha(ImageChops.subtract(full.getchannel("A"), inner))
+            tile = full
+        else:
+            tile = draw(color, half, layer["stroke"])
+    else:
+        tile = draw(color)
+    return tile, layer["x"] - pad, layer["y"] - pad
+
+
+def _gradient_tile(w: int, h: int, g: dict) -> Image.Image:
+    import math
+    import numpy as np
+    r = math.radians(g.get("ang", 90))
+    y, x = np.mgrid[0:h, 0:w].astype(float)
+    t = ((x / max(1, w - 1) - 0.5) * math.cos(r) + (y / max(1, h - 1) - 0.5) * math.sin(r)) + 0.5
+    t = np.clip(t, 0, 1)[..., None]
+    a = np.array(Image.new("RGB", (1, 1), g["a"]).getpixel((0, 0)), dtype=float)
+    b = np.array(Image.new("RGB", (1, 1), g["b"]).getpixel((0, 0)), dtype=float)
+    return Image.fromarray((a + (b - a) * t).astype("uint8"), "RGB").convert("RGBA")
+
+
 def _place(img: Image.Image, tile: Image.Image, x: float, y: float, angle: float = 0, opacity: float = 1.0) -> Image.Image:
     """Pega `tile` en (x, y) girado `angle` grados alrededor de su esquina superior izquierda (como Fabric)."""
     import math
@@ -82,7 +132,10 @@ def _photo(layer: dict, lote: Path) -> Image.Image:
     src = Image.open(lote / layer["src_rel"]).convert("RGB")
     w, h = max(1, round(layer["w"])), max(1, round(layer["h"]))
     py = layer.get("py", 0.0)
-    out = ImageOps.fit(src, (w, h), Image.LANCZOS, centering=(0.5, 0.5 + 0.5 * py)).convert("RGBA")
+    out = ImageOps.fit(src, (w, h), Image.LANCZOS, centering=(0.5, 0.5 + 0.5 * py))
+    if layer.get("filtro") in ("bn", "bncontraste"):
+        out = ImageOps.autocontrast(ImageOps.grayscale(out), cutoff=1) if layer["filtro"] == "bncontraste" else ImageOps.grayscale(out)
+    out = out.convert("RGBA")
     if layer.get("radius"):
         mask = Image.new("L", (w, h), 0)
         ImageDraw.Draw(mask).rounded_rectangle([0, 0, w - 1, h - 1], radius=layer["radius"], fill=255)
@@ -102,12 +155,22 @@ def compose(design: dict, base_path: Path) -> Image.Image:
     for layer in design["layers"]:
         t = layer["type"]
         if t == "text":
-            _text(d, layer)
+            if layer.get("angle") or layer.get("stroke") or layer.get("opacity", 1) < 1:
+                tile, tx, ty = _text_tile(layer)
+                img = _place(img, tile, tx, ty, layer.get("angle", 0), layer.get("opacity", 1.0))
+                d = ImageDraw.Draw(img)
+            else:
+                _text(d, layer)
         elif t == "rect":
             w, h = max(1, round(layer["w"])), max(1, round(layer["h"]))
             sw = layer.get("strokeWidth", 0) or 0
             tile = Image.new("RGBA", (w + sw, h + sw), (0, 0, 0, 0))
             fill = None if str(layer["color"]).startswith("rgba(0,0,0,0") else layer["color"]
+            if layer.get("gradient"):
+                mask = Image.new("L", tile.size, 0)
+                ImageDraw.Draw(mask).rounded_rectangle([sw / 2, sw / 2, w - 1 + sw / 2, h - 1 + sw / 2], radius=layer.get("rx", 0), fill=255)
+                tile.paste(_gradient_tile(*tile.size, layer["gradient"]), (0, 0), mask)
+                fill = None
             ImageDraw.Draw(tile).rounded_rectangle([sw / 2, sw / 2, w - 1 + sw / 2, h - 1 + sw / 2], radius=layer.get("rx", 0),
                                                    fill=fill, outline=layer.get("stroke"), width=sw)
             if layer.get("shadow"):

@@ -118,6 +118,10 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 | Hablemos (contacto) | fondo claro con textura, bajada naranja, título, mail y web en píldoras y foto tipo sticker con borde naranja |
 | Mosaico de fotos | de 3 a 10 fotos con esquinas redondeadas sobre naranja con textura y formas de marca |
 | Patrón DER | la banda de patrón de la marca arriba y el texto abajo |
+| Marco tarjeta | tarjeta naranja con degradé, foto en ventana redondeada, pestañas de logo y fecha, textos grandes abajo |
+| Bloques | fondo claro con textura, 3 fotos escalonadas, bloques naranjas, rayas, palabra vertical con contorno y datos |
+| Galería B/N | 4 a 7 fotos en blanco y negro desparramadas, cuadrados naranjas translúcidos, título gigante y columna de datos |
+| Escenario | fondo oscuro, fotos en tarjetas de colores con el nombre de cada persona, ondas, formas DER y pie con fecha |
 
 - En el título, lo que pongas `*entre asteriscos*` va resaltado en naranja.
 - Con varias fotos se arma un **carrusel en cualquier plantilla** (hasta 20 diapositivas): el texto va solo en la primera, salvo que marques "Texto en todas".

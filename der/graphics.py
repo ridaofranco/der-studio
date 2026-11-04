@@ -57,8 +57,13 @@ TEMPLATES = {
     "hablemos": "Hablemos (contacto)",
     "mosaico": "Mosaico de fotos",
     "patron": "Patrón DER",
+    "marco_tarjeta": "Marco tarjeta",
+    "bloques": "Bloques",
+    "galeria": "Galería B/N",
+    "escenario": "Escenario",
 }
-PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta", "mosaico"}
+PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta", "mosaico",
+                   "marco_tarjeta", "bloques", "galeria", "escenario"}
 # Plantillas que arman UNA pieza con todas las fotos (las demás hacen una pieza por foto = carrusel)
 SINGLE_DESIGN = {  # (histórico) ahora todas arman carrusel con varias fotos
     "texto", "naranja", "collage", "cita", "dato", "lista", "comparar", "agenda"}
@@ -73,6 +78,10 @@ TEMPLATE_HINTS = {
     "hablemos": "Subtítulo = bajada naranja (ej. SOMOS DER) · Título = el mensaje · Texto: 1er renglón = mail, 2do = web. Foto opcional abajo a la derecha.",
     "mosaico": "De 3 a 10 fotos por pieza sobre naranja con textura. Título opcional arriba.",
     "patron": "La banda de patrón DER arriba y el texto abajo. Título · Subtítulo · Texto.",
+    "marco_tarjeta": "1 foto. Título = palabra grande abajo a la izquierda · Subtítulo = fecha y hora (en la pestaña) · Texto: 1er renglón = nombre, 2do = palabra grande a la derecha.",
+    "bloques": "3 fotos. Título = título grande · Subtítulo = fecha · Texto: 1er renglón = bloque naranja, 2do = recuadro naranja, 3ro = recuadro oscuro, el resto = datos a la derecha.",
+    "galeria": "4 a 7 fotos (salen en blanco y negro). Título = 2 palabras gigantes · Subtítulo = fecha (ej. 23 NOV 2026) · Texto = un renglón por actividad o dato.",
+    "escenario": "2 a 5 fotos (una por persona, la última va grande). Título = nombre del evento · Subtítulo = fecha y horario (al pie) · Texto = un nombre por renglón, en el mismo orden que las fotos.",
 }
 FONT_FAMILY = {"title": "DER Titulo", "subtitle": "DER Sub", "body": "DER Cuerpo"}
 
@@ -295,6 +304,36 @@ def element_png(kind: str, corner: str = "tl", size: int = 110, thick: int = 10,
     color = color if color.startswith("#") else "#" + color
     if kind == "difuminado":
         return difuminado(forma, w, h, color)
+    if kind == "rayas":   # franja de rayas diagonales (como en las piezas editoriales)
+        W2, H2 = max(8, min(w, 2400)), max(8, min(h, 2400))
+        img = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        step = max(8, int(H2 * 0.5))
+        for x0 in range(-H2, W2 + H2, step):
+            d.polygon([(x0, H2), (x0 + step * 0.5, H2), (x0 + step * 0.5 + H2, 0), (x0 + H2, 0)], fill=color)
+        return img
+    if kind == "ondas":   # líneas onduladas paralelas
+        import math
+        W2, H2 = max(8, min(w, 2400)), max(8, min(h, 2400))
+        img = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        n = max(3, cols)
+        for k in range(n):
+            y0 = H2 * (k + 0.5) / n
+            pts = [(x, y0 + math.sin(x / W2 * math.pi * 1.6 + k * 0.25) * H2 * 0.12) for x in range(0, W2 + 8, 8)]
+            d.line(pts, fill=color, width=max(2, int(thick)))
+        return img
+    if kind == "modulo":  # forma DER como imagen recoloreable
+        W2, H2 = max(8, min(w, 2400)), max(8, min(h, 2400))
+        img = Image.new("RGBA", (W2, H2), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        if forma == "triangulo":
+            d.polygon([(0, 0), (W2, H2), (0, H2)], fill=color)
+        elif forma == "circulo":
+            d.ellipse([0, 0, W2 - 1, H2 - 1], fill=color)
+        else:  # cuarto de círculo
+            d.pieslice([0, 0, 2 * W2, 2 * H2], 180, 270, fill=color)
+        return img
     if kind == "textura":
         return textura(Image.new("RGBA", (max(8, min(w, 2400)), max(8, min(h, 2400))), color), 1.0 if forma == "papel" else 1.3)
     if kind == "esquinero":
@@ -331,7 +370,7 @@ class Design:
 
     # Capas -----------------------------------------------------------------
     def text(self, role, text, x, y, w, color, size, line_gap, hl_color=None, upper=False, lines=None,
-             align="left", name=None):
+             align="left", name=None, angle=0, stroke=None, stroke_width=0):
         if lines is None:
             text = text.upper() if upper else text
             lines = _wrap(_tokens(text), brand.font(role, size), w)
@@ -348,6 +387,7 @@ class Design:
             "text": "\n".join(" ".join(wd for wd, _ in line) for line in lines),
             "x": round(x), "y": round(y), "w": round(w), "size": size, "lineGap": line_gap,
             "color": color, "styles": styles, "align": align,
+            **({"angle": angle} if angle else {}), **({"stroke": stroke, "strokeWidth": round(stroke_width)} if stroke else {}),
         })
         return len(lines) * size * line_gap
 
@@ -381,8 +421,10 @@ class Design:
         return width, h
 
     def rect(self, x, y, w, h, color, name="Barra", radius=0, stroke=None, stroke_width=0, angle=0, opacity=1.0,
-             shadow=False):
+             shadow=False, gradient=None):
         layer = {"type": "rect", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h), "color": color}
+        if gradient:
+            layer["gradient"] = gradient   # {"a": color, "b": color, "ang": grados}
         if radius:
             layer["rx"] = round(radius)
         if stroke:
@@ -395,7 +437,7 @@ class Design:
             layer["shadow"] = True
         self.layers.append(layer)
 
-    def photo(self, img, x, y, w, h, name="Foto", radius=0, angle=0):
+    def photo(self, img, x, y, w, h, name="Foto", radius=0, angle=0, filtro=None):
         """Foto como capa editable (se mueve, se recorta, se le pone marco o filtro en el editor)."""
         key = _photo_key(img)
         self.pending[key] = img
@@ -405,6 +447,16 @@ class Design:
             layer["radius"] = round(radius)
         if angle:
             layer["angle"] = angle
+        if filtro:
+            layer["filtro"] = filtro
+        self.layers.append(layer)
+
+    def element(self, kind, x, y, w, h, color=ORANGE, name="Elemento", opacity=1.0, **params):
+        """Elemento gráfico de la marca (rayas, ondas, formas) como capa recoloreable."""
+        layer = {"type": "image", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h),
+                 "src": element_url(kind, w=max(8, round(w)), h=max(8, round(h)), color=color.lstrip("#"), **params)}
+        if opacity < 1:
+            layer["opacity"] = opacity
         self.layers.append(layer)
 
     def fade(self, x, y, w, h, forma="abajo", color=DARK, opacity=0.9, name="Degradé"):
@@ -959,6 +1011,201 @@ def tpl_patron(fmt, photos, c, first=True):
     return D
 
 
+# --- Plantillas desde referencias editoriales (nov 2026), con la paleta DER ---------------------
+
+N2, GRIS, NEGRO = "#f58b22", "#8a8889", "#1b1b1b"
+
+
+def _renglones(c) -> list[str]:
+    return [ln.strip() for ln in (c.body or "").splitlines() if ln.strip()]
+
+
+def tpl_marco_tarjeta(fmt, photos, c, first=True):
+    """Tarjeta naranja con degradé, foto en una ventana redondeada, pestañas de logo y fecha, textos grandes abajo."""
+    D = Design(fmt, c, DARK)
+    W, H, s = D.W, D.H, D.s
+    m = 36 * s
+    D.rect(m, m, W - 2 * m, H - 2 * m, ORANGE, "Tarjeta", radius=48 * s, gradient={"a": ORANGE, "b": "#ffb066", "ang": 90})
+    pad = 52 * s
+    wx, wy = m + pad, m + pad
+    ww = W - 2 * m - 2 * pad
+    wh = (H - 2 * m) * (0.66 if fmt == "historia" else 0.6 if fmt == "post" else 0.52)
+    D.photo(photos[0], wx, wy, ww, wh, "Foto", radius=42 * s)
+    # pestañas que "muerden" la ventana (como en la pieza de referencia)
+    tab_w, tab_h = 400 * s, 140 * s
+    D.rect(m, m, tab_w, tab_h, ORANGE, "Pestaña logo", radius=44 * s)
+    D.logo("on_orange", 170 * s, m + 70 * s, m + 32 * s)
+    if c.subtitle:
+        dy = wy + wh * 0.56
+        fs, ln = _fit_lines(c.subtitle, "title", 400 * s, 170 * s, int(64 * s), int(30 * s), 1.05, upper=True, max_lines=2)
+        th = len(ln) * fs * 1.05 + 70 * s
+        D.rect(m, dy, 470 * s, th, "#ff7a26", "Pestaña fecha", radius=44 * s)
+        D.text("title", "", m + 58 * s, dy + 35 * s, 400 * s, DARK, fs, 1.05, lines=ln, name="Fecha")
+    y0 = wy + wh + 46 * s
+    hb = H - m - 40 * s - y0
+    if c.title:
+        fs, ln = _fit_lines(c.title, "title", ww * 0.56, hb, int(150 * s), int(50 * s), 0.98, upper=True, max_lines=3)
+        D.text("title", "", wx, y0, ww * 0.56, DARK, fs, 0.98, hl_color=WHITE, lines=ln, name="Título")
+    r = _renglones(c)
+    if r:
+        D.text("subtitle", r[0].upper(), wx + ww * 0.5, y0 + 10 * s, ww * 0.5, DARK, int(46 * s), 1.1, align="right", name="Nombre")
+    if len(r) > 1:
+        fs, ln = _fit_lines(r[1], "title", ww * 0.46, hb * 0.6, int(130 * s), int(44 * s), 1.0, upper=True, max_lines=2)
+        D.text("title", "", wx + ww * 0.54, H - m - 40 * s - len(ln) * fs, ww * 0.46, DARK, fs, 1.0, lines=ln, align="right", name="Palabra")
+    return D
+
+
+def tpl_bloques(fmt, photos, c, first=True):
+    """Fondo claro con textura, fotos escalonadas, bloques naranjas, rayas, palabra con contorno vertical y datos."""
+    D = Design(fmt, c, LIGHT)
+    W, H, s = D.W, D.H, D.s
+    D.texture("#efe7df")
+    top, bottom = _safe(fmt, H)
+    ph = (photos * 3)[:3]
+    y0 = top if fmt == "historia" else 70 * s
+    A = H * (0.40 if fmt == "historia" else 0.46 if fmt == "post" else 0.40)
+    m = 110 * s
+    # bloques y fotos
+    D.rect(m, y0 + A * 0.08, 62 * s, A * 0.42, ORANGE, "Bloque")
+    D.photo(ph[0], m + 80 * s, y0, W * 0.30, A * 0.55, "Foto 1")
+    D.photo(ph[1], m + 80 * s + W * 0.30 + 20 * s, y0 + A * 0.12, W * 0.28, A * 0.55, "Foto 2")
+    D.photo(ph[2], m, y0 + A * 0.58, W * 0.30 + 80 * s, A * 0.42, "Foto 3")
+    D.element("rayas", m, y0 + A * 0.52, 200 * s, 54 * s, ORANGE, "Rayas")
+    D.rect(m - 76 * s, y0 + A * 0.86, 62 * s, 62 * s, ORANGE, "Cuadrado")
+    bx, by = m + 80 * s + W * 0.30 + 20 * s, y0 + A * 0.70
+    bw, bh = W - m - bx, A * 0.30
+    D.rect(bx, by, bw, bh, ORANGE, "Bloque datos")
+    r = _renglones(c)
+    if r:
+        D.text("subtitle", r[0].upper(), bx + 40 * s, by + bh / 2 - 40 * s, bw - 80 * s, WHITE, int(40 * s), 1.1, name="Dato bloque")
+    D.element("rayas", bx + bw - 230 * s, by - 70 * s, 230 * s, 54 * s, ORANGE, "Rayas")
+    # palabra con contorno, en vertical sobre las fotos
+    word = (c.title or "DER").split()[0].upper()
+    D.text("title", word, m + 80 * s + W * 0.30 - 40 * s, y0 + A * 0.98, A * 0.95, "rgba(0,0,0,0)",
+           int(min(170 * s, A * 0.95 / max(3, len(word)) * 1.6)), 1.0, name="Palabra vertical", angle=-90, stroke=WHITE, stroke_width=5 * s)
+    # título y datos
+    ty = y0 + A + 60 * s
+    if c.title:
+        fs, ln = _fit_lines(c.title, "title", W - 2 * m + 40 * s, H * 0.18, int(150 * s), int(50 * s), 0.98, upper=True, max_lines=2)
+        D.text("title", "", m - 20 * s, ty, W - 2 * m + 40 * s, "#3a2310" if False else DARK, fs, 0.98, hl_color=ORANGE, lines=ln, name="Título")
+        ty += len(ln) * fs * 0.98 + 30 * s
+    lx, lw = m - 20 * s, W * 0.42
+    yy = ty
+    if c.subtitle:
+        D.text("title", c.subtitle.upper(), lx, yy, lw, DARK, int(62 * s), 1.0, name="Fecha")
+        yy += 90 * s
+    if len(r) > 1:
+        fs, ln = _fit_lines(r[1], "subtitle", lw - 48 * s, 120 * s, int(36 * s), int(22 * s), 1.1, max_lines=2)
+        hh = len(ln) * fs * 1.1 + 44 * s
+        D.rect(lx, yy, lw, hh, ORANGE, "Recuadro naranja")
+        D.text("subtitle", "", lx + 24 * s, yy + 22 * s, lw - 48 * s, WHITE, fs, 1.1, lines=ln, name="Dato naranja")
+        yy += hh
+    if len(r) > 2:
+        D.rect(lx, yy, lw, 80 * s, DARK, "Recuadro oscuro")
+        D.text("title", r[2].upper(), lx, yy + 18 * s, lw, N2, int(44 * s), 1.0, align="center", name="Dato oscuro")
+    rx, ry = W * 0.55, ty
+    for k, ln in enumerate(r[3:7]):
+        D.text("subtitle", ln, rx, ry, W - m - rx, DARK, int(40 * s), 1.15, name=f"Dato {k + 1}")
+        ry += 76 * s
+    D.element("rayas", lx + lw - 120 * s, min(H - bottom - 40 * s, yy + 110 * s), 160 * s, 50 * s, ORANGE, "Rayas")
+    D.logo("on_light", 120 * s, W - m, y0, "rt")
+    return D
+
+
+def tpl_galeria(fmt, photos, c, first=True):
+    """Fotos en blanco y negro desparramadas, cuadrados naranjas translúcidos, título gigante y columna de datos."""
+    D = Design(fmt, c, WHITE)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    k = H / 1920 if fmt == "historia" else H / 1350 * 0.72 if fmt == "post" else H / 1080 * 0.58
+    oy = top - 150 * s if fmt == "historia" else 40 * s
+    Y = lambda f: oy + f * 1920 * k  # noqa: E731  (posiciones pensadas para historia, se comprimen en post)
+    D.rect(0, Y(0.42), W * 0.66, Y(0.74) - Y(0.42), "#ececec", "Bloque gris")
+    D.rect(W * 0.62, Y(0.05), W * 0.38, Y(0.33) - Y(0.05), "#f2f2f2", "Bloque gris")
+    slots = [(0.40, 0.12, 0.27, 0.23), (0.13, 0.24, 0.21, 0.16), (0.05, 0.42, 0.33, 0.13), (0.44, 0.38, 0.22, 0.16),
+             (0.69, 0.38, 0.25, 0.10), (0.69, 0.50, 0.25, 0.06), (0.43, 0.58, 0.22, 0.10)]
+    for i, (ph, (fx, fy, fw, fh)) in enumerate(zip(photos, slots), 1):
+        D.photo(ph, W * fx, Y(fy), W * fw, Y(fy + fh) - Y(fy), f"Foto {i}", filtro="bn")
+    for i, (fx, fy, fw, fh) in enumerate([(0.62, 0.08, 0.14, 0.07), (0.05, 0.30, 0.21, 0.035), (0.61, 0.35, 0.07, 0.05),
+                                          (0.08, 0.50, 0.15, 0.11), (0.48, 0.63, 0.18, 0.05)], 1):
+        D.rect(W * fx, Y(fy), W * fw, Y(fy + fh) - Y(fy), ORANGE, f"Cuadrado {i}", opacity=0.72)
+    D.logo("on_light", 150 * s, W * 0.13, Y(0.07))
+    cx = W * 0.70
+    if c.subtitle:
+        parts = c.subtitle.upper().split()
+        fs = int(76 * s)
+        for j, part in enumerate(parts[:3]):
+            D.text("title", part, cx, Y(0.13) + j * fs * 1.02, W - cx - 40 * s, ORANGE if j == len(parts[:3]) - 1 else DARK, fs, 1.0,
+                   name=f"Fecha {j + 1}")
+    ry = Y(0.62)
+    for j, ln in enumerate(_renglones(c)[:3 if fmt == "cuadrado" else 5]):
+        fs, lns = _fit_lines(ln.upper(), "subtitle", W - cx - 10 * s, 90 * s, int(34 * s), int(22 * s), 1.08, max_lines=2)
+        D.text("subtitle", "", cx - 20 * s, ry, W - cx - 10 * s, DARK, fs, 1.08, lines=lns, name=f"Dato {j + 1}")
+        ry += len(lns) * fs * 1.08 + 24 * s
+    words = (c.title or "GALERÍA DER").upper().split()
+    w1, w2 = (words[0], " ".join(words[1:])) if len(words) > 1 else (words[0], "")
+    ty = Y(0.70)
+    fs1, ln1 = _fit_lines(w1, "title", W * 0.58, Y(0.82) - ty, int(230 * s), int(60 * s), 0.95, max_lines=1)
+    D.text("title", "", W * 0.05, ty, W * 0.6, ORANGE, fs1, 0.95, lines=ln1, name="Título 1")
+    y2 = ty + fs1 * 1.0
+    if w2:
+        fs2, ln2 = _fit_lines(w2, "title", W * 0.62, H * 0.2, min(fs1, int(230 * s)), int(60 * s), 0.95, max_lines=1)
+        D.text("title", "", W * 0.33, y2, W * 0.65, ORANGE, fs2, 0.95, lines=ln2, name="Título 2")
+        y2 += fs2
+    D.tag(W * 0.05, y2 - 30 * s, DARK)
+    return D
+
+
+def tpl_escenario(fmt, photos, c, first=True):
+    """Fondo oscuro, fotos en tarjetas de colores con el nombre de cada uno, ondas, formas DER grandes y pie con fecha."""
+    D = Design(fmt, c, NEGRO)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    m, g = 110 * s, 16 * s
+    y0 = top if fmt == "historia" else 60 * s
+    D.element("ondas", 0, H * 0.28, W * 0.45, H * 0.16, ORANGE, "Ondas", opacity=0.7, cols=9, g=3)
+    D.element("ondas", W * 0.55, H * 0.44, W * 0.45, H * 0.16, ORANGE, "Ondas", opacity=0.7, cols=9, g=3)
+    colores = [ORANGE, GRIS, N2, "#5a5a5a"]
+    n = max(1, len(photos))
+    chicas, grande = (photos[:-1], photos[-1]) if n > 1 else ([], photos[0])
+    area_h = (H - y0 - bottom) * (0.70 if fmt == "historia" else 0.66)
+    filas = max(1, -(-len(chicas) // 2))
+    big_h = area_h * (0.42 if chicas else 1.0)
+    cell_h = (area_h - big_h - g * filas) / filas if chicas else 0
+    cw = (W - 2 * m - g) / 2
+    nombres = _renglones(c)
+    for i, ph in enumerate(chicas):
+        x = m + (i % 2) * (cw + g)
+        y = y0 + (i // 2) * (cell_h + g)
+        D.rect(x, y, cw, cell_h, colores[i % 4], f"Tarjeta {i + 1}")
+        D.photo(ph, x, y + cell_h * 0.16, cw, cell_h * 0.84, f"Foto {i + 1}")
+        if i < len(nombres):
+            D.text("subtitle", nombres[i].upper(), x + cw * 0.45, y + 14 * s, cw * 0.52, WHITE, int(24 * s), 1.1, align="right", name=f"Nombre {i + 1}")
+    by = y0 + filas * (cell_h + g) if chicas else y0
+    D.rect(m, by, W - 2 * m, big_h, colores[len(chicas) % 4], "Tarjeta grande")
+    D.photo(grande, m, by + big_h * 0.12, W - 2 * m, big_h * 0.88, "Foto grande")
+    if len(nombres) > len(chicas):
+        D.text("subtitle", nombres[len(chicas)].upper(), m + (W - 2 * m) * 0.55, by + 14 * s, (W - 2 * m) * 0.42, WHITE, int(26 * s), 1.1,
+               align="right", name="Nombre grande")
+    # formas DER grandes (como el monograma de la referencia)
+    sz = min(300 * s, big_h * 0.7)
+    D.element("modulo", W - m - sz * 1.45, by + big_h - sz, sz * 0.75, sz, ORANGE, "Forma DER", forma="triangulo")
+    D.element("modulo", W - m - sz * 0.7, by + big_h - sz * 0.7, sz * 0.7, sz * 0.7, N2, "Forma DER", forma="cuarto")
+    # título y pie
+    ty = by + big_h + 60 * s
+    for k in range(4):
+        D.rect(m + k * 14 * s, ty + 6 * s, 5 * s, 130 * s, ORANGE, "Línea título")
+    if c.title:
+        fs, ln = _fit_lines(c.title, "title", W - 2 * m - 80 * s, 180 * s, int(110 * s), int(40 * s), 1.0, upper=True, max_lines=2)
+        D.text("title", "", m + 80 * s, ty, W - 2 * m - 80 * s, LIGHT, fs, 1.0, hl_color=ORANGE, lines=ln, name="Título")
+    fy = H - bottom + (40 * s if fmt == "historia" else -30 * s)
+    D.rect(m, fy - 30 * s, W - 2 * m, 2 * s, GRIS, "Línea pie")
+    D.logo("on_dark", 110 * s, m, fy - 10 * s)
+    if c.subtitle:
+        D.text("title", c.subtitle.upper(), W * 0.35, fy, W * 0.65 - m, LIGHT, int(38 * s), 1.0, align="right", name="Fecha y horario")
+    return D
+
+
 RENDERERS = {
     "impacto": tpl_impacto,
     "marco": tpl_marco,
@@ -975,6 +1222,10 @@ RENDERERS = {
     "hablemos": tpl_hablemos,
     "mosaico": tpl_mosaico,
     "patron": tpl_patron,
+    "marco_tarjeta": tpl_marco_tarjeta,
+    "bloques": tpl_bloques,
+    "galeria": tpl_galeria,
+    "escenario": tpl_escenario,
 }
 
 
@@ -985,7 +1236,7 @@ def relayout(origen: dict, fmt: str, fotos_dir: Path) -> "Design":
 
 
 # Plantillas que hacen una pieza por foto
-PER_PHOTO = {"impacto", "marco", "banda", "cinta"}
+PER_PHOTO = {"impacto", "marco", "banda", "cinta", "marco_tarjeta"}
 # Diapositivas siguientes de un carrusel para las plantillas de texto: misma onda, una por foto
 CONTINUATION = {"texto": "impacto", "naranja": "banda", "cita": "marco", "lista": "marco",
                 "dato": "impacto", "agenda": "impacto", "hablemos": "marco", "patron": "marco"}
@@ -1011,6 +1262,9 @@ def slides(template: str, photos: list) -> list[tuple[str, list, bool]]:
         return [("collage", g, True) for g in _chunks(photos, 4)]
     if template == "mosaico":
         return [("mosaico", g, True) for g in _chunks(photos, 10)]
+    if template in ("galeria", "escenario", "bloques"):
+        size = {"galeria": 7, "escenario": 5, "bloques": 3}[template]
+        return [(template, g, True) for g in _chunks(photos, size)]
     if template == "comparar":
         out = [("comparar", photos[k:k + 2], True) for k in range(0, len(photos) - 1, 2)]
         if len(photos) % 2:

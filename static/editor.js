@@ -45,7 +45,7 @@
       const dir = (design.base || "").split("?")[0].replace(/\/[^/]*$/, "");
       const o = await loadImage(dir + "/" + l.src_rel, { crossOrigin: "anonymous" });
       o.set({ name: l.name || "Foto", left: l.x, top: l.y, ...common });
-      o.foto = { marco: "ninguno", zoom: 1, px: 0, py: l.py || 0, filtro: "ninguno", aspecto: l.w / l.h, radio: l.radius || 0 };
+      o.foto = { marco: "ninguno", zoom: 1, px: 0, py: l.py || 0, filtro: l.filtro || "ninguno", aspecto: l.w / l.h, radio: l.radius || 0 };
       o.scale(l.w / (o.getElement().naturalWidth || o.width));
       applyPhoto(o);
       o.set({ left: l.x, top: l.y });
@@ -55,13 +55,16 @@
       return new fabric.Textbox(l.text, {
         left: l.x, top: l.y, width: l.w + Math.ceil(l.size * 0.15), fontFamily: l.family,
         fontSize: l.size, fill: l.color, lineHeight: l.lineGap / FS_MULT, styles: toStyles(l.styles),
-        textAlign: l.align || "left", name: l.name, role: l.font,
+        textAlign: l.align || "left", name: l.name, role: l.font, ...common,
+        ...(l.stroke ? { stroke: l.stroke, strokeWidth: l.strokeWidth || 2, paintFirst: "stroke", strokeLineJoin: "round",
+          efecto: String(l.color).startsWith("rgba(0,0,0,0") ? "hueco" : "contorno" } : {}),
       });
     }
     if (l.type === "rect") {
       return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name, forma: "rect",
         rx: l.rx || 0, ry: l.rx || 0, stroke: l.stroke || null, strokeWidth: l.strokeWidth || 0, ...common,
-        shadow: l.shadow ? new fabric.Shadow({ color: "rgba(0,0,0,0.3)", blur: 28, offsetX: 10, offsetY: 16 }) : null });
+        shadow: l.shadow ? new fabric.Shadow({ color: "rgba(0,0,0,0.3)", blur: 28, offsetX: 10, offsetY: 16 }) : null,
+        ...(l.gradient ? { degradado: { ...l.gradient }, fill: gradient(l.gradient) } : {}) });
     }
     const img = await loadImage(l.src);
     img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null, ...common });
