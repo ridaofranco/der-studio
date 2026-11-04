@@ -1512,7 +1512,39 @@
     return blob;
   }
 
+  /** Otra plantilla, mismo formato: los textos editados pasan a los de igual nombre (Título, Fecha…),
+   *  y lo que se agregó a mano (textos, formas, fotos) se suma tal cual. Lo de la plantilla vieja no. */
+  async function cambiarPlantilla(src, dst) {
+    if (!src.fabric) return null;
+    const el = document.createElement("canvas");
+    const c = new fabric.StaticCanvas(el, { width: dst.W, height: dst.H, enableRetinaScaling: false });
+    await build(c, dst);
+    const deLaPlantilla = new Set((src.layers || []).flatMap(l => [l.name, l.grupo]).filter(Boolean));
+    const tpl = c.getObjects().slice(), used = new Set(), extra = [];
+    for (const so of src.fabric.objects || []) {
+      if (so.type === "textbox") {
+        const match = tpl.find(t => !used.has(t) && t.type === "textbox" && t.name && t.name === so.name);
+        if (match) { used.add(match); match.set({ text: so.text, styles: so.styles || {} }); continue; }
+      }
+      if (so.name === "Logo") continue;   // la plantilla nueva trae el suyo
+      if (!deLaPlantilla.has(so.name) && so.name !== "Foto de fondo") extra.push(so);
+    }
+    const k = dst.W / src.W;
+    const objs = await new Promise(res => fabric.util.enlivenObjects(extra, res));
+    objs.forEach(n => {
+      if (k !== 1) n.set({ left: n.left * k, top: n.top * k, scaleX: n.scaleX * k, scaleY: n.scaleY * k });
+      if (n.bloqueado) applyLock(n, true);
+      c.add(n);
+    });
+    c.renderAll();
+    dst.fabric = c.toJSON(EXTRA);
+    delete dst.fabric.backgroundImage;
+    const blob = await (await fetch(c.toDataURL({ format: "jpeg", quality: 0.93 }))).blob();
+    c.dispose();
+    return blob;
+  }
+
   const logoUrl = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");
 
-  window.DEREditor = { render, open, loadFonts, build, convertir };
+  window.DEREditor = { render, open, loadFonts, build, convertir, cambiarPlantilla };
 })();

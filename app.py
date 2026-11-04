@@ -212,7 +212,7 @@ def _zip(files: list[Path], dest: Path) -> Path:
 
 @app.get("/")
 def index():
-    return render_template("index.html", templates=graphics.TEMPLATES, music_styles=list(reels.music.STYLES),
+    return render_template("index.html", templates=graphics.TEMPLATES, photo_templates=sorted(graphics.PHOTO_TEMPLATES), music_styles=list(reels.music.STYLES),
                            photo_styles=carrusel.PHOTO_STYLES,
                            transitions=reels.TRANSITIONS, template_hints=graphics.TEMPLATE_HINTS)
 
@@ -964,6 +964,44 @@ def api_pieza_editable():
     D = graphics.relayout(org, src.get("fmt") or "post", d / "fotos")
     old_base = d / src["base_file"]
     new = {"name": src["name"], "base_file": D.save_base(d / src["name"]), **D.to_dict(), "origen": org}
+    if old_base.name != new["base_file"]:
+        old_base.unlink(missing_ok=True)
+    (d / f"{src['name']}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")
+    compose.save_final(new, d)
+    return jsonify(diseno=_design_out(d, new))
+
+
+@app.post("/api/pieza/plantilla")
+def api_pieza_plantilla():
+    """Cambiar de plantilla una pieza ya hecha: mismas fotos, textos y formato, otro diseño.
+    Se reemplaza en el lugar; la versión anterior queda en <lote>/respaldo/."""
+    data = request.get_json(silent=True) or {}
+    d = _lote(str(data.get("lote", "")))
+    src = _pieza(d, str(data.get("nombre", "")))
+    tpl = str(data.get("plantilla", ""))
+    if tpl not in graphics.RENDERERS:
+        return jsonify(error="No conozco esa plantilla."), 400
+    org = src.get("origen")
+    if not org or not all((d / "fotos" / n).exists() for n in org.get("fotos", [])):
+        return jsonify(error="Esta pieza es anterior al 4/11 y no tiene guardadas sus fotos: generala de nuevo."), 400
+    contenido = graphics.Content(**org["contenido"])
+    if tpl in graphics.PHOTO_TEMPLATES and not org.get("fotos"):
+        return jsonify(error="Esa plantilla necesita fotos y esta pieza no tiene."), 400
+    if tpl not in graphics.PHOTO_TEMPLATES and not (contenido.title or contenido.subtitle or contenido.body):
+        return jsonify(error="Esa plantilla necesita un título o un texto, y esta pieza no tiene."), 400
+    nuevo_org = {**org, "plantilla": tpl, "principal": True}
+    try:
+        D = graphics.relayout(nuevo_org, src.get("fmt") or "post", d / "fotos")
+    except Exception as e:  # noqa: BLE001
+        traceback.print_exc()
+        return jsonify(error=f"Con estas fotos y textos no se pudo armar esa plantilla ({e})."), 400
+    bk = d / "respaldo"
+    bk.mkdir(exist_ok=True)
+    for f in (d / f"{src['name']}.json", d / f"{src['name']}.jpg", d / src["base_file"]):
+        if f.exists():
+            shutil.copy(f, bk / f.name)
+    old_base = d / src["base_file"]
+    new = {"name": src["name"], "base_file": D.save_base(d / src["name"]), **D.to_dict(), "origen": nuevo_org}
     if old_base.name != new["base_file"]:
         old_base.unlink(missing_ok=True)
     (d / f"{src['name']}.json").write_text(json.dumps(new, ensure_ascii=False), encoding="utf-8")

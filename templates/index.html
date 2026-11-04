@@ -139,6 +139,20 @@
   .desc .err { color: #b3261e; }
   .desc .cuenta { font-size: 12px; color: var(--texto-suave); text-align: right; }
   @media (max-width: 600px) { .desc { padding: 16px; } .desc .opts { grid-template-columns: 1fr 1fr; } }
+  /* cambiar de plantilla */
+  .tpl-hoja { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 900; display: grid; place-items: end center; }
+  .tpl-caja { background: #fff; width: min(720px, 100%); max-height: 88vh; overflow: auto; border-radius: 14px 14px 0 0; padding: 18px 18px 28px; }
+  @media (min-width: 700px) { .tpl-hoja { place-items: center; } .tpl-caja { border-radius: 14px; } }
+  .tpl-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: -18px; background: #fff; padding: 4px 0 6px; z-index: 1; }
+  .tpl-cab h2 { margin: 0; }
+  .tpl-x { border: 0; background: var(--claro); width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+  .tpl-caja .tpl-thumbs button { border: 0; background: none; padding: 0; display: grid; gap: 4px; cursor: pointer; font: 12px "DER Sub", sans-serif; color: var(--oscuro); text-align: center; }
+  .tpl-caja .tpl-thumbs button:disabled { cursor: default; opacity: .45; }
+  .tpl-caja .tpl-thumbs button.actual { opacity: 1; }
+  .tpl-caja .tpl-thumbs button.actual img { border-color: var(--naranja); }
+  .tpl-caja .tpl-thumbs button:not(:disabled):hover img { border-color: var(--naranja); }
+  .tpl-caja .tpl-thumbs small { display: block; font: 11px "DER Cuerpo", sans-serif; color: var(--texto-suave); }
+  .tpl-estado { margin-top: 12px; font-size: 14px; }
   /* segundo plano, recientes y avisos */
   .segundo-plano { margin: 14px 0 0; padding: 12px 14px; background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; font-size: 14px; }
   .avisos { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--claro); border: 1px solid #555; border-radius: 999px; padding: 7px 14px 7px 10px; font: 13px "DER Sub", sans-serif; cursor: pointer; }
@@ -597,6 +611,7 @@ async function guardarPieza(lote, d, blob) {
   return (await r.json()).url + "?t=" + Date.now();
 }
 
+const TPL_PIEZA = {{ templates|tojson }}, TPL_FOTOS = new Set({{ photo_templates|tojson }});
 /** Piezas del lote = páginas (como en Canva): editar, duplicar, ordenar, cambiar de formato, descargar. */
 async function mostrarPiezas(box, lote, disenos) {
   const guardarOrden = () => fetch("/api/pieza/orden", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -669,6 +684,41 @@ async function mostrarPiezas(box, lote, disenos) {
     if (blob) nueva.final = await guardarPieza(lote, nueva, blob);
     disenos[i] = nueva;
   }
+  // otra plantilla para esta pieza: mismas fotos y textos, se reemplaza en el lugar
+  function elegirOtraPlantilla(i) {
+    const d = disenos[i], org = d.origen || {}, conFotos = (org.fotos || []).length > 0;
+    const c = org.contenido || {}, conTexto = !!(c.title || c.subtitle || c.body);
+    const hoja = document.createElement("div");
+    hoja.className = "tpl-hoja";
+    hoja.innerHTML = `<div class="tpl-caja" role="dialog" aria-label="Cambiar de plantilla">
+      <div class="tpl-cab"><h2>Cambiar de plantilla</h2><button type="button" class="tpl-x" aria-label="Cerrar">✕</button></div>
+      <p class="hint">Mismas fotos y textos, otro diseño. Lo que agregaste a mano se pasa; la versión anterior queda de respaldo.</p>
+      <div class="tpl-thumbs">${Object.entries(TPL_PIEZA).map(([k, n]) => {
+        const no = k === org.plantilla ? "es la actual" : TPL_FOTOS.has(k) && !conFotos ? "necesita fotos" : !TPL_FOTOS.has(k) && !conTexto ? "necesita texto" : "";
+        return `<button type="button" data-k="${k}" ${no ? "disabled" : ""} class="${k === org.plantilla ? "actual" : ""}">
+          <img src="/plantilla-muestra/${k}.jpg" alt="" loading="lazy"><span>${n}${no ? `<small>${no}</small>` : ""}</span></button>`;
+      }).join("")}</div>
+      <p class="tpl-estado hint" hidden></p></div>`;
+    document.body.appendChild(hoja);
+    const cerrar = () => hoja.remove();
+    hoja.onclick = e => { if (e.target === hoja) cerrar(); };
+    hoja.querySelector(".tpl-x").onclick = cerrar;
+    hoja.querySelectorAll("[data-k]").forEach(b => b.onclick = async () => {
+      const est = hoja.querySelector(".tpl-estado");
+      hoja.querySelectorAll("[data-k]").forEach(x => x.disabled = true);
+      est.hidden = false; est.textContent = `Armando la pieza con «${TPL_PIEZA[b.dataset.k]}»…`;
+      try {
+        const j = await api("/api/pieza/plantilla", { nombre: d.name, plantilla: b.dataset.k });
+        const nueva = j.diseno;
+        const blob = await DEREditor.cambiarPlantilla(d, nueva);
+        if (blob) nueva.final = await guardarPieza(lote, nueva, blob);
+        disenos[i] = nueva; cerrar(); render();
+      } catch (err) {
+        est.textContent = "No se pudo: " + err.message;
+        hoja.querySelectorAll("[data-k]").forEach(x => x.disabled = x.classList.contains("actual"));
+      }
+    });
+  }
   function menu(btn, i) {
     document.querySelectorAll(".pg-pop").forEach(x => x.remove());
     const d = disenos[i];
@@ -678,6 +728,7 @@ async function mostrarPiezas(box, lote, disenos) {
     pop.innerHTML = `<button data-m="editar">Editar</button>
       ${d.rehacible ? `<button data-m="editable" class="pg-hi">Hacer editable (fotos y bandas sueltas)</button>` : ""}
       ${!d.editable && !d.rehacible ? `<button disabled title="Anterior al 4/11: no tiene guardadas sus fotos">Fotos fijas: generala de nuevo para moverlas</button>` : ""}
+      ${d.origen ? `<button data-m="tpl">Cambiar de plantilla</button>` : ""}
       <button data-m="dup">Duplicar</button>
       <button data-m="izq" ${i === 0 ? "disabled" : ""}>← Mover antes</button><button data-m="der" ${i === disenos.length - 1 ? "disabled" : ""}>Mover después →</button>
       <div class="pg-sub">Pasar a otro formato</div>
@@ -694,6 +745,7 @@ async function mostrarPiezas(box, lote, disenos) {
       try {
         if (m === "editar") return editar(i);
         if (m === "editable") { await hacerEditable(i); render(); return; }
+        if (m === "tpl") return elegirOtraPlantilla(i);
         if (m === "dup") {
           const j = await api("/api/pieza/nueva", { desde: d.name });
           const copia = { ...JSON.parse(JSON.stringify(d)), ...j.diseno, fabric: d.fabric ? JSON.parse(JSON.stringify(d.fabric)) : undefined };
