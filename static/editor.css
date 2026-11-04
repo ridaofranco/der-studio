@@ -176,3 +176,6 @@
 .dif-vineta { background-image: radial-gradient(circle, transparent 35%, var(--c) 100%); }
 .ed-mas { margin-top: 10px; }
 .ed-mas summary { cursor: pointer; font: 13px "DER Sub", sans-serif; color: var(--texto-suave); padding: 6px 0; }
+
+.ed-viejo { margin: 10px 12px 0; padding: 10px 12px; background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; font-size: 13px; line-height: 1.35; }
+.ed-viejo button { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 0; border-radius: 8px; background: var(--naranja); color: #fff; font: 14px "DER Sub", sans-serif; cursor: pointer; }

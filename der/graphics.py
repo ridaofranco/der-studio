@@ -421,8 +421,10 @@ class Design:
         return width, h
 
     def rect(self, x, y, w, h, color, name="Barra", radius=0, stroke=None, stroke_width=0, angle=0, opacity=1.0,
-             shadow=False, gradient=None):
+             shadow=False, gradient=None, grupo=None):
         layer = {"type": "rect", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h), "color": color}
+        if grupo:
+            layer["grupo"] = grupo   # el editor junta en un grupo las capas con el mismo nombre de grupo
         if gradient:
             layer["gradient"] = gradient   # {"a": color, "b": color, "ang": grados}
         if radius:
@@ -437,7 +439,7 @@ class Design:
             layer["shadow"] = True
         self.layers.append(layer)
 
-    def photo(self, img, x, y, w, h, name="Foto", radius=0, angle=0, filtro=None):
+    def photo(self, img, x, y, w, h, name="Foto", radius=0, angle=0, filtro=None, grupo=None):
         """Foto como capa editable (se mueve, se recorta, se le pone marco o filtro en el editor)."""
         key = _photo_key(img)
         self.pending[key] = img
@@ -449,6 +451,8 @@ class Design:
             layer["angle"] = angle
         if filtro:
             layer["filtro"] = filtro
+        if grupo:
+            layer["grupo"] = grupo
         self.layers.append(layer)
 
     def element(self, kind, x, y, w, h, color=ORANGE, name="Elemento", opacity=1.0, **params):
@@ -586,8 +590,8 @@ def tpl_marco(fmt, photos, c, first=True):
     photo_bottom = H - bottom - (text_h + 70 * s if has_text else 40 * s)
     pw, ph = int(W - 2 * m - 24 * s), int(photo_bottom - photo_top)
     off = int(24 * s)
-    D.rect(m + off, photo_top + off, pw, ph, ORANGE, "Bloque naranja")
-    D.photo(photos[0], m, photo_top, pw, ph)
+    D.rect(m + off, photo_top + off, pw, ph, ORANGE, "Bloque naranja", grupo="Foto con bloque")
+    D.photo(photos[0], m, photo_top, pw, ph, grupo="Foto con bloque")
     D.logo("on_light", 170 * s, m, top)
     D.dots(W - m - 4 * 26 * s, top + 12 * s, 5, 3, 26 * s, 4 * s, ORANGE)
     if has_text:
@@ -877,13 +881,13 @@ def tpl_cinta(fmt, photos, c, first=True):
     import math
     rad = math.radians(angle)
     rot = lambda dx, dy: (cx + dx * math.cos(rad) - dy * math.sin(rad), cy + dx * math.sin(rad) + dy * math.cos(rad))  # noqa: E731
-    D.rect(cx, cy, cw, ch, "#ffffff", "Tarjeta", angle=angle, shadow=True)
+    D.rect(cx, cy, cw, ch, "#ffffff", "Tarjeta", angle=angle, shadow=True, grupo="Foto con cinta")
     px, py = rot(border, border)
-    D.photo(photos[0], px, py, pw, ph, angle=angle)
+    D.photo(photos[0], px, py, pw, ph, angle=angle, grupo="Foto con cinta")
     tw, th = 230 * s, 62 * s
     for (dx, dy), ta in (((cw - 250 * s, -20 * s), angle - 24), ((20 * s, ch - 90 * s), angle + 28)):
         tx, ty = rot(dx, dy)
-        D.rect(tx, ty, tw, th, ORANGE, "Cinta", angle=ta, opacity=0.85)
+        D.rect(tx, ty, tw, th, ORANGE, "Cinta", angle=ta, opacity=0.85, grupo="Foto con cinta")
     if has_text:
         D.text_block(m, H - bottom - text_h, box_w, H * 0.26, DARK, ORANGE, DARK, title_size=80)
     else:
@@ -932,10 +936,10 @@ def tpl_hablemos(fmt, photos, c, first=True):
         ang = -9
         fx = W - (pw + 2 * b) * 0.86
         fy = H - (ph + 2 * b) * (0.8 if fmt == "historia" else 0.86) - (bottom * 0.6 if fmt == "historia" else 0)
-        D.rect(fx, fy, pw + 2 * b, ph + 2 * b, ORANGE, "Marco sticker", radius=36 * s, angle=ang, shadow=True)
+        D.rect(fx, fy, pw + 2 * b, ph + 2 * b, ORANGE, "Marco sticker", radius=36 * s, angle=ang, shadow=True, grupo="Foto con marco")
         r = math.radians(ang)
         D.photo(photos[0], fx + b * math.cos(r) - b * math.sin(r), fy + b * math.sin(r) + b * math.cos(r), pw, ph,
-                radius=26 * s, angle=ang)
+                radius=26 * s, angle=ang, grupo="Foto con marco")
     if mail:
         D.rect(m, py, pill_w, pill_h, DARK, "Píldora mail", radius=pill_h / 2)
         fs, ln = _fit_lines(mail, "subtitle", pill_w - 60 * s, pill_h * 0.6, int(40 * s), int(20 * s), 1.0, max_lines=1)

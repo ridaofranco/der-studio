@@ -589,6 +589,10 @@ async function mostrarPiezas(box, lote, disenos) {
     onSave: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
     onSaveOther: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
     onNav: k => editar(k),
+    onHacerEditable: async dd => {
+      const k = disenos.indexOf(dd);
+      try { await hacerEditable(k); render(); editar(k); } catch (err) { alert("No se pudo: " + err.message); render(); }
+    },
   });
   function pintar(i) {
     const c = box.querySelectorAll(".pieza")[i], d = disenos[i];

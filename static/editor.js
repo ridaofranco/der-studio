@@ -202,7 +202,17 @@
       await new Promise(ok => canvas.loadFromJSON({ ...design.fabric, backgroundImage: undefined }, ok));
       canvas.setBackgroundImage(bg, () => {});
     } else {
-      for (const l of design.layers) canvas.add(await layerToObject(l, design));
+      for (const l of design.layers) { const o = await layerToObject(l, design); if (l.grupo) o.grupo = l.grupo; canvas.add(o); }
+      // capas con el mismo grupo (por ejemplo, la foto y su marco) = un solo elemento que se agranda junto
+      const grupos = {};
+      canvas.getObjects().forEach(o => { if (o.grupo) (grupos[o.grupo] = grupos[o.grupo] || []).push(o); });
+      Object.entries(grupos).forEach(([nombre, objs]) => {
+        if (objs.length < 2) return;
+        const at = canvas.getObjects().indexOf(objs[0]);
+        objs.forEach(o => { canvas.remove(o); delete o.grupo; });
+        const g = new fabric.Group(objs, { name: nombre, objectCaching: false });
+        canvas.add(g); canvas.moveTo(g, at);
+      });
     }
     canvas.getObjects().forEach(o => { if (o.bloqueado) applyLock(o, true); if (o.foto) o.objectCaching = false; });
     // color de fondo: se ve donde la base es transparente (todo menos las fotos)
@@ -267,6 +277,8 @@
           <span class="ed-name"></span>
           <span class="ed-nav" ${navegable ? "" : "hidden"}><button data-a="prev" aria-label="Pieza anterior" title="Guardar e ir a la anterior">‹</button><b class="ed-pg"></b><button data-a="next" aria-label="Pieza siguiente" title="Guardar e ir a la siguiente">›</button></span>
         </div>
+        <div class="ed-viejo" hidden><b>Pieza de la versión anterior:</b> la foto y su marco están pegados al fondo y no se pueden mover.
+          <button data-a="hacer-editable">Hacer editable ahora</button></div>
         <div class="ed-tabs" role="tablist"></div>
         <div class="ed-panel"></div>
         <div class="ed-foot">
@@ -278,7 +290,7 @@
     return wrap;
   }
 
-  async function open(design, { logos = [], patrones = [], onSave, siblings = [], onSaveOther, lote = "", onNav } = {}) {
+  async function open(design, { logos = [], patrones = [], onSave, siblings = [], onSaveOther, lote = "", onNav, onHacerEditable } = {}) {
     await loadFonts();
     const root = ui(siblings.length > 1 && !!onNav);
     const $ = s => root.querySelector(s);
@@ -539,8 +551,8 @@
     let bgAng = 135, bgGrad = null;
     const fondoFx = () => canvas.fondoFx || {};
 
-    const kindName = o => o.type === "activeSelection" ? `${o.getObjects().length} elementos` : o.type === "group" ? "Grupo" :
-      o.name || (o.type === "textbox" ? "Texto" : o.logo ? "Logo" : "Elemento");
+    const kindName = o => o.type === "activeSelection" ? `${o.getObjects().length} elementos` :
+      o.name || (o.type === "group" ? "Grupo" : o.type === "textbox" ? "Texto" : o.logo ? "Logo" : "Elemento");
 
     function capasHTML() {
       const objs = canvas.getObjects().slice().reverse(), sel = new Set(canvas.getActiveObjects());
@@ -1254,6 +1266,14 @@
       uncurve,
       "subir-foto": () => addPhoto(false), "foto-fondo": () => addPhoto(true), "reemplazar-foto": replacePhoto,
       prev: () => nav(-1), next: () => nav(1),
+      // rearma la pieza vieja con todo como elementos, conservando lo que se editó recién
+      async "hacer-editable"() {
+        const b = $(".ed-viejo button");
+        b.disabled = true; b.textContent = "Rearmando…";
+        await exportar();
+        close();
+        await onHacerEditable(design);
+      },
       fliph() { const o = active(); o.set("flipX", !o.flipX); canvas.requestRenderAll(); snapshot(); },
       flipv() { const o = active(); o.set("flipY", !o.flipY); canvas.requestRenderAll(); snapshot(); },
       "page-center"() { const o = active(); moveRect(o, "hcenter", { left: 0, top: 0, width: design.W, height: design.H }); moveRect(o, "vcenter", { left: 0, top: 0, width: design.W, height: design.H }); canvas.requestRenderAll(); snapshot(); },
@@ -1316,7 +1336,8 @@
         onSave && onSave(design, blob);
       },
     };
-    root.querySelectorAll(".ed-top [data-a], .ed-foot [data-a]").forEach(b => b.onclick = () => actions[b.dataset.a]());
+    root.querySelectorAll(".ed-top [data-a], .ed-foot [data-a], .ed-viejo [data-a]").forEach(b => b.onclick = () => actions[b.dataset.a]());
+    if (design.rehacible && onHacerEditable) $(".ed-viejo").hidden = false;
     const pos = siblings.indexOf(design);
     if (pos >= 0) $(".ed-pg").textContent = `${pos + 1}/${siblings.length}`;
 
@@ -1460,8 +1481,16 @@
       }
       extra.push(so);
     }
-    // los de la plantilla que el usuario borró, se borran también
-    if (rehecha) tpl.forEach(t => { if (!used.has(t) && srcObjs.length && !["Logo"].includes(t.name)) c.remove(t); });
+    // los de la plantilla que el usuario borró, se borran también: solo los que estaban en la pieza original
+    // (por nombre) y ya no están en lo editado. Lo que la versión nueva suma (foto, marco, textura) se queda.
+    if (rehecha) {
+      const cuenta = list => list.reduce((m, n) => (m[n] = (m[n] || 0) + 1, m), {});
+      const antes = cuenta((src.layers || []).map(l => l.name));
+      const quedan = cuenta(srcObjs.map(o => o.name));
+      const borrar = {};
+      Object.keys(antes).forEach(n => { const d = antes[n] - (quedan[n] || 0); if (d > 0 && n !== "Logo") borrar[n] = d; });
+      tpl.forEach(t => { if (!used.has(t) && borrar[t.name] > 0) { c.remove(t); borrar[t.name]--; } });
+    }
     const k = dst.W / src.W;
     const objs = await new Promise(res => fabric.util.enlivenObjects(extra, res));
     objs.forEach(n => {
