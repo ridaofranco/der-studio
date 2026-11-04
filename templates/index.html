@@ -125,6 +125,20 @@
     .row { grid-template-columns: 1fr; gap: 0; }
     input[type=text], textarea, select, input[type=number] { font-size: 16px; } /* evita el zoom de iOS */
   }
+  /* descripción del posteo o reel */
+  .col-res { min-width: 0; display: grid; gap: 16px; align-content: start; }
+  .desc { background: #fff; border-radius: var(--radio); padding: 20px; }
+  .desc .opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .desc .opts label { margin: 0 0 4px; }
+  .desc textarea.texto { min-height: 180px; margin-top: 12px; line-height: 1.5; }
+  .desc .botones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .desc .botones button { flex: 1 1 140px; padding: 12px; border: 0; border-radius: 8px; cursor: pointer; font: 14px "DER Sub", sans-serif; background: var(--oscuro); color: #fff; }
+  .desc .botones button.prim { background: var(--naranja); }
+  .desc .botones button:disabled { opacity: .6; cursor: wait; }
+  .desc .usados { font-size: 12px; color: var(--texto-suave); margin-top: 6px; }
+  .desc .err { color: #b3261e; }
+  .desc .cuenta { font-size: 12px; color: var(--texto-suave); text-align: right; }
+  @media (max-width: 600px) { .desc { padding: 16px; } .desc .opts { grid-template-columns: 1fr 1fr; } }
   /* segundo plano, recientes y avisos */
   .segundo-plano { margin: 14px 0 0; padding: 12px 14px; background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; font-size: 14px; }
   .avisos { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--claro); border: 1px solid #555; border-radius: 999px; padding: 7px 14px 7px 10px; font: 13px "DER Sub", sans-serif; cursor: pointer; }
@@ -259,7 +273,10 @@
       </div>
       <button class="btn" type="submit">Generar piezas</button>
     </form>
-    <div class="resultado" id="rGraficos"><div class="vacio">Las piezas aparecen acá.</div></div>
+    <div class="col-res">
+      <div class="resultado" id="rGraficos"><div class="vacio">Las piezas aparecen acá.</div></div>
+      <div class="desc" id="dGraficos" hidden></div>
+    </div>
   </section>
 
   <!-- REELS -->
@@ -335,7 +352,10 @@
       <button class="btn" type="submit">Generar reel</button>
     </form>
     </div>
-    <div class="resultado" id="rReel"><div class="vacio">El reel aparece acá.</div></div>
+    <div class="col-res">
+      <div class="resultado" id="rReel"><div class="vacio">El reel aparece acá.</div></div>
+      <div class="desc" id="dReel" hidden></div>
+    </div>
   </section>
 
   <!-- CARRUSEL MIXTO -->
@@ -384,7 +404,10 @@
       </div>
       <button class="btn" type="submit">Armar carrusel</button>
     </form>
-    <div class="resultado" id="rCarrusel"><div class="vacio">Las diapositivas aparecen acá, en orden.</div></div>
+    <div class="col-res">
+      <div class="resultado" id="rCarrusel"><div class="vacio">Las diapositivas aparecen acá, en orden.</div></div>
+      <div class="desc" id="dCarrusel" hidden></div>
+    </div>
   </section>
 
   <!-- RECIENTES -->
@@ -799,6 +822,7 @@ function seguirTrabajo(id, tipo, mostrar = true) {
   const box = $(sel);
   if (mostrar) {
     irA(tab);
+    const dsc = $(DESC_BOX[tipo]); if (dsc) dsc.hidden = true;
     box.innerHTML = progresoHTML("est-" + id, "Procesando…") + `<p class="segundo-plano">Ya podés salir de la app: DER Studio sigue trabajando${
       avisosActivos() ? " y te avisa cuando termine" : ". Cuando vuelvas, el resultado aparece acá y en <b>Recientes</b>"}.</p>`;
   }
@@ -823,6 +847,7 @@ function seguirTrabajo(id, tipo, mostrar = true) {
 }
 
 function mostrarResultado(tipo, box, s) {
+  panelDescripcion(tipo, s.lote);
   if (tipo === "piezas") return mostrarPiezas(box, s.lote, s.disenos);
   if (tipo === "carrusel") return mostrarCarrusel(box, s.lote, s.diapositivas);
   if (s.proyecto) return ReelEditor.open(box, s, {
@@ -832,6 +857,75 @@ function mostrarResultado(tipo, box, s) {
   });
   box.innerHTML = `<video class="final" src="${s.archivo}" controls playsinline></video>
     <div class="acciones" style="justify-content:center"><a class="prim" href="${s.archivo}" download>Descargar reel (.mp4)</a></div>`;
+}
+
+// --- Descripción del posteo o reel (Gemini, plan gratis) ------------------------------
+const DESC_BOX = { piezas: "#dGraficos", reel: "#dReel", carrusel: "#dCarrusel" };
+async function panelDescripcion(tipo, lote) {
+  const box = $(DESC_BOX[tipo]);
+  if (!box || !lote) return;
+  box.hidden = false;
+  box.innerHTML = '<h2>Descripción</h2><p class="hint">Cargando…</p>';
+  let info = {};
+  try { info = await (await fetch("/api/descripcion/" + encodeURIComponent(lote))).json(); } catch (_) {}
+  const esc = t => String(t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const sel = (name, ops, val) => `<select name="${name}">${ops.map(([v, t]) => `<option value="${v}"${v === val ? " selected" : ""}>${t}</option>`).join("")}</select>`;
+  box.innerHTML = `<h2>Descripción</h2>
+    <label>De qué se trata <small>(evento, cliente, ciudad, qué hicimos; lo que no pongas, no lo inventa)</small></label>
+    <textarea name="tema" rows="3" placeholder="Ej.: acreditaciones y staff del Databricks Live en el Hotel Libertador, 600 personas, todo con QR">${esc(info.tema)}</textarea>
+    ${info.textos && info.textos.length ? `<p class="usados">También uso los textos de ${tipo === "reel" ? "el reel" : "las piezas"}: ${info.textos.slice(0, 4).map(esc).join(" · ")}</p>` : ""}
+    <div class="opts" style="margin-top:12px">
+      <div><label>Red</label>${sel("red", [["instagram", "Instagram"], ["linkedin", "LinkedIn"], ["tiktok", "TikTok"]], info.red || "instagram")}</div>
+      <div><label>Largo</label>${sel("largo", [["corta", "Corta"], ["media", "Media"], ["larga", "Larga"]], info.largo || "media")}</div>
+      <div><label>Idioma</label>${sel("idioma", [["es", "Español"], ["en", "Inglés"]], info.idioma || "es")}</div>
+    </div>
+    <label class="check" style="margin-top:10px"><input type="checkbox" name="hashtags" ${info.hashtags === false ? "" : "checked"}> Con hashtags</label>
+    <div class="clave" ${info.hay_clave ? "hidden" : ""}>
+      <label>Clave de Gemini <small>(gratis, se carga una sola vez; la sacás de aistudio.google.com/apikey)</small></label>
+      <input type="text" name="clave" placeholder="AIza…" autocomplete="off">
+    </div>
+    <textarea class="texto" name="texto" placeholder="Acá aparece la descripción. La podés retocar antes de copiarla." ${info.texto ? "" : "hidden"}>${esc(info.texto)}</textarea>
+    <div class="cuenta" ${info.texto ? "" : "hidden"}></div>
+    <div class="botones">
+      <button type="button" class="prim" data-a="generar">${info.texto ? "Otra versión" : "Generar descripción"}</button>
+      <button type="button" data-a="copiar" ${info.texto ? "" : "hidden"}>Copiar</button>
+    </div>
+    <p class="hint err" hidden></p>`;
+  const q = s => box.querySelector(s), ta = q("textarea.texto"), cuenta = q(".cuenta"), err = q(".err");
+  const contar = () => { cuenta.textContent = `${ta.value.length} / 2.200 caracteres`; };
+  contar();
+  let guardarT;
+  ta.oninput = () => { contar(); clearTimeout(guardarT); guardarT = setTimeout(() => fetch("/api/descripcion/guardar", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lote, texto: ta.value }) }), 800); };
+  q('[data-a="copiar"]').onclick = async ev => {
+    try { await navigator.clipboard.writeText(ta.value); } catch (_) { ta.select(); document.execCommand("copy"); }
+    ev.target.textContent = "Copiada"; setTimeout(() => ev.target.textContent = "Copiar", 1500);
+  };
+  q('[data-a="generar"]').onclick = async ev => {
+    const b = ev.target; err.hidden = true;
+    const clave = q('[name="clave"]').value.trim();
+    if (!q(".clave").hidden) {
+      if (!clave) { err.hidden = false; err.textContent = "Pegá la clave de Gemini para empezar."; return; }
+      const r = await fetch("/api/descripcion/clave", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clave }) });
+      const j = await r.json();
+      if (!r.ok) { err.hidden = false; err.textContent = j.error; return; }
+      q(".clave").hidden = true;
+    }
+    b.disabled = true; const antes = b.textContent; b.textContent = "Escribiendo…";
+    try {
+      const r = await fetch("/api/descripcion", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        lote, tema: q('[name="tema"]').value, red: q('[name="red"]').value, largo: q('[name="largo"]').value,
+        idioma: q('[name="idioma"]').value, hashtags: q('[name="hashtags"]').checked, anterior: ta.value }) });
+      const j = await r.json();
+      if (!r.ok) {
+        if (j.sin_clave) q(".clave").hidden = false;
+        err.hidden = false; err.textContent = j.error; b.textContent = antes; return;
+      }
+      ta.value = j.texto; ta.hidden = false; cuenta.hidden = false; contar();
+      q('[data-a="copiar"]').hidden = false; b.textContent = "Otra versión";
+    } catch (e) { err.hidden = false; err.textContent = sinConexion(e); b.textContent = antes; }
+    finally { b.disabled = false; }
+  };
 }
 
 function irA(tab) {

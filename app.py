@@ -16,13 +16,14 @@ from pathlib import Path
 
 import hmac
 import json
+import re
 import secrets
 import shutil
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
-from der import aviso, brand, carrusel, compose, graphics, plantillas, reels, updater
+from der import aviso, brand, carrusel, compose, descripcion, graphics, plantillas, reels, updater
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "salidas"
@@ -694,6 +695,58 @@ def api_lote(lote):
                                "segundos": round(reels.probe(v)["duration"], 1)}
         return jsonify(tipo="carrusel", lote=d.name, diapositivas=[by_name[k] for k in sorted(by_name)])
     return jsonify(tipo="piezas", lote=d.name, disenos=designs)
+
+
+# --- Descripción para el posteo o el reel (Gemini, plan gratis) --------------------
+
+@app.get("/api/descripcion/<lote>")
+def api_descripcion_get(lote):
+    d = _lote(lote)
+    f = d / "descripcion.json"
+    guardada = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    return jsonify(hay_clave=bool(descripcion.clave()), textos=descripcion.contexto_lote(d), **guardada)
+
+
+@app.post("/api/descripcion")
+def api_descripcion():
+    b = request.get_json(force=True)
+    d = _lote(b.get("lote", ""))
+    opciones = {k: b.get(k) for k in ("tema", "red", "largo", "idioma", "hashtags")}
+    try:
+        texto = descripcion.generar(
+            b.get("tema", ""), descripcion.contexto_lote(d), red=b.get("red", "instagram"),
+            formato="reel" if _lote_tipo(d) == "reel" else "carrusel" if _lote_tipo(d) == "carrusel" else "posteo",
+            largo=b.get("largo", "media"), idioma=b.get("idioma", "es"), hashtags=b.get("hashtags", True) is not False,
+            anterior=b.get("anterior", ""))
+    except RuntimeError as e:
+        if str(e) == "SIN_CLAVE":
+            return jsonify(error="Falta la clave de Gemini.", sin_clave=True), 400
+        if str(e) == "CLAVE_MALA":
+            return jsonify(error="Google rechazó esa clave de Gemini. Pegala de nuevo.", sin_clave=True), 400
+        return jsonify(error=str(e)), 503
+    (d / "descripcion.json").write_text(json.dumps({**opciones, "texto": texto}, ensure_ascii=False), encoding="utf-8")
+    return jsonify(texto=texto)
+
+
+@app.post("/api/descripcion/guardar")
+def api_descripcion_guardar():
+    """Guarda lo que Franco retocó a mano, para que aparezca así al volver a abrir el trabajo."""
+    b = request.get_json(force=True)
+    d = _lote(b.get("lote", ""))
+    f = d / "descripcion.json"
+    data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
+    data["texto"] = str(b.get("texto", ""))[:5000]
+    f.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    return jsonify(ok=True)
+
+
+@app.post("/api/descripcion/clave")
+def api_descripcion_clave():
+    k = str(request.get_json(force=True).get("clave", "")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9_\-]{30,60}", k):
+        return jsonify(error="Esa clave no parece de Gemini (empieza con AIza…)."), 400
+    descripcion.guardar_clave(k)
+    return jsonify(ok=True)
 
 
 # --- Avisos al celular (Web Push) --------------------------------------------------

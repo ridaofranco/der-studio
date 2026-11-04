@@ -20,3 +20,4 @@ brand/fonts/*
 brand/plantillas/
 # patrones de la marca (imágenes propias, como los logos)
 brand/patrones/*
+.claves/
