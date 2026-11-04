@@ -1,0 +1,104 @@
+/* Editor de piezas (estilo Canva): lienzo a la izquierda, panel con pestañas a la derecha (abajo en el celular) */
+.ed { position: fixed; inset: 0; z-index: 50; background: #1c1c1c; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.ed svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ed-stage { position: relative; display: grid; place-items: center; overflow: hidden; min-height: 0;
+  background: repeating-conic-gradient(#262626 0 25%, #222 0 50%) 0 0 / 24px 24px; }
+.ed-stage .canvas-container { box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+.ed-zoomlbl { position: absolute; left: 12px; bottom: 10px; font: 11px "DER Sub", sans-serif; color: #aaa; background: rgba(0,0,0,.5); padding: 3px 7px; border-radius: 5px; }
+.ed-toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: #f0f0f0; color: #222; padding: 9px 14px; border-radius: 9px;
+  font-size: 13.5px; box-shadow: 0 6px 20px rgba(0,0,0,.4); opacity: 0; pointer-events: none; max-width: 90%; text-align: center; z-index: 5; }
+.ed-toast.on { opacity: 1; }
+
+.ed-side { background: #fff; display: flex; flex-direction: column; min-height: 0; color: var(--oscuro); }
+.ed-top { display: flex; gap: 4px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--borde); }
+.ed-top button { width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; display: grid; place-items: center; color: var(--oscuro); }
+.ed-top button:hover:not(:disabled) { background: var(--claro); }
+.ed-top button:disabled { opacity: .3; cursor: default; }
+.ed-name { font-size: 12px; color: var(--texto-suave); margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%; }
+.ed-tabs { display: flex; padding: 0 8px; border-bottom: 1px solid var(--borde); }
+.ed-tabs button { flex: 1; border: 0; background: transparent; padding: 12px 6px 10px; font: 14px "DER Sub", sans-serif; color: var(--texto-suave); cursor: pointer;
+  border-bottom: 3px solid transparent; }
+.ed-tabs button.on { color: var(--oscuro); border-bottom-color: var(--naranja); }
+.ed-panel { flex: 1; overflow-y: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.ed-panel h3 { font: 12px "DER Titulo", sans-serif; text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 4px; }
+.ed-panel h3:first-child { margin-top: 0; }
+.ed-panel h3 small { font: 11px "DER Cuerpo", sans-serif; text-transform: none; color: var(--texto-suave); letter-spacing: 0; }
+.ed-panel label { margin: 8px 0 2px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ed-panel label output { color: var(--texto-suave); font-size: 12px; }
+.ed-panel select, .ed-panel input[type=range], .ed-panel textarea { width: 100%; }
+.ed-panel input[type=range] { accent-color: var(--naranja); }
+.ed-panel textarea { min-height: 64px; font-size: 15px; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 8px; resize: vertical; }
+.ed-panel select { padding: 9px 10px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; font: inherit; }
+.ed-panel button { font: 13px "DER Sub", sans-serif; color: var(--oscuro); cursor: pointer; }
+.ed-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-btns button { padding: 8px 10px; border: 1px solid var(--borde); background: #fff; border-radius: 7px; }
+.ed-btns button.on, .ed-btns button:hover { border-color: var(--naranja); }
+.ed-sw { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.ed-sw button { width: 34px; height: 34px; border-radius: 50%; padding: 0; border: 2px solid #ccc; }
+.ed-sw button.on { border-color: var(--naranja); box-shadow: 0 0 0 2px #ffd3b8; }
+.ed-otro { display: inline-flex !important; align-items: center; gap: 6px; margin: 0 !important; font: 13px "DER Sub", sans-serif; cursor: pointer; }
+.ed-otro input { width: 34px; height: 34px; padding: 0; border: 2px solid #ccc; border-radius: 50%; overflow: hidden; background: none; cursor: pointer; }
+.ed-otro input::-webkit-color-swatch-wrapper { padding: 0; }
+.ed-otro input::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.ed-tip { font-size: 12px; color: var(--texto-suave); margin: 10px 0 0; }
+.ed-danger { color: #b3261e !important; }
+.ed-wide { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--oscuro); background: var(--oscuro); color: #fff !important; margin-top: 8px; }
+.ed-wide.sec { background: #fff; color: var(--oscuro) !important; border-color: var(--borde); }
+.ed-wide.on { background: var(--naranja); border-color: var(--naranja); }
+.ed-rep-hint { font-size: 12px; color: var(--texto-suave); margin: 4px 0 0; }
+
+/* agregar */
+.ed-grid2 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.ed-card { display: grid; justify-items: center; gap: 6px; padding: 12px 6px 10px; border: 1px solid var(--borde); border-radius: 10px; background: #fafafa; }
+.ed-card:hover { border-color: var(--naranja); }
+.ed-card span { font-size: 12px; color: var(--texto-suave); }
+.ed-ct { font: 22px "DER Sub", sans-serif; height: 28px; line-height: 28px; }
+.ed-ct.t { font: 15px "DER Titulo", sans-serif; }
+.ed-cbar { width: 40px; height: 6px; background: var(--naranja); margin: 11px 0; }
+.ed-ccor { width: 26px; height: 26px; border-top: 5px solid var(--naranja); border-left: 5px solid var(--naranja); margin: 1px 0; }
+.ed-cdots { width: 40px; height: 28px; background: radial-gradient(circle, var(--naranja) 2px, transparent 2.5px) 0 0 / 10px 10px; }
+
+/* herramientas con ícono */
+.ed-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.ed-tools.four { grid-template-columns: repeat(4, 1fr); margin-top: 0; }
+.ed-tools button { display: grid; justify-items: center; gap: 4px; padding: 9px 4px; border: 1px solid var(--borde); border-radius: 9px; background: #fff; }
+.ed-tools button span { font-size: 11.5px; }
+.ed-tools button:hover, .ed-tools button.on { border-color: var(--naranja); }
+.ed-tools button.on { background: #fff3eb; }
+
+/* posición */
+.ed-alg { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.ed-alg.two { grid-template-columns: repeat(2, 1fr); }
+.ed-alg button, .ed-ib { height: 40px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; display: grid; place-items: center; }
+.ed-alg button:hover, .ed-ib:hover { border-color: var(--naranja); }
+.ed-row3 { display: grid; grid-template-columns: 1fr 44px 44px; gap: 6px; align-items: end; }
+.ed-nums { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ed-num { display: flex !important; align-items: center; gap: 6px; margin: 0 !important; padding: 0 10px; height: 40px; border: 1px solid var(--borde); border-radius: 8px;
+  font: 12px "DER Sub", sans-serif !important; color: var(--texto-suave); position: relative; }
+.ed-num input { flex: 1; min-width: 0; border: 0; outline: 0; font: 15px "DER Cuerpo", sans-serif; text-align: right; background: transparent; color: var(--oscuro); }
+.ed-num i { font-style: normal; }
+.ed-chk { justify-content: flex-start !important; font-size: 13px; }
+.ed-chk input { accent-color: var(--naranja); width: 18px; height: 18px; }
+
+/* capas */
+.ed-layers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ed-layers li { display: grid; grid-template-columns: 28px 1fr 34px 34px; align-items: center; gap: 6px; padding: 6px 6px 6px 8px; border: 1px solid var(--borde);
+  border-radius: 8px; background: #fff; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.ed-layers li.on { border-color: var(--naranja); background: #fff3eb; }
+.ed-layers li.off .ed-ln { opacity: .45; text-decoration: line-through; }
+.ed-layers li.drag { opacity: .7; box-shadow: 0 6px 16px rgba(0,0,0,.18); position: relative; z-index: 2; }
+.ed-lk { width: 26px; height: 26px; border-radius: 6px; background: var(--oscuro); color: #fff; display: grid; place-items: center; font: 12px "DER Titulo", sans-serif; }
+.ed-ln { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-layers button { width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; display: grid; place-items: center; color: var(--texto-suave); }
+.ed-layers button:hover { background: var(--claro); }
+.ed-layers button.on { color: var(--naranja); }
+
+.ed-foot { display: flex; gap: 8px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid var(--borde); background: #fff; }
+.ed-foot button { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--borde); background: #fff; cursor: pointer; font: 14px "DER Titulo", sans-serif; text-transform: uppercase; color: var(--oscuro); }
+.ed-prim { background: var(--naranja) !important; color: #fff !important; border-color: var(--naranja) !important; }
+
+@media (max-width: 860px) {
+  .ed { grid-template-columns: 1fr; grid-template-rows: 50vh minmax(0, 1fr); height: 100dvh; }
+  .ed-panel textarea, .ed-panel select, .ed-num input { font-size: 16px; }
+  .ed-grid2 { grid-template-columns: repeat(3, 1fr); }
+}

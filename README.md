@@ -58,19 +58,23 @@ Al generar (posteos, historias o reels) elegís el logo:
   (`...NARANJA-Y-GRIS-CLARO` para fondos oscuros, `...NARANJA-Y-GRIS-OSCURO` para fondos claros).
 - **Uno puntual**: se usa ese en todas las piezas.
 
-## Editar una pieza
+## Editar una pieza (estilo Canva)
 
-Tocá cualquier imagen generada y se abre el editor:
-- **Mover**: arrastrar. **Agrandar o achicar**: desde las esquinas. Se pega sola al centro.
-- **Textos**: doble clic para escribir. Tipografía (Netron / Articulat / Jost), tamaño, alineación y mayúsculas.
-- **Resaltar palabras**: mientras escribís, seleccioná las palabras y tocá un color.
-- **Colores**: solo los de la marca (naranja, gris oscuro, gris claro, blanco).
-- **Logo**: cambiarlo por otra versión o agregar otro (por ejemplo, el del cliente).
-- **Replicar en todas las piezas** (con el logo elegido): lo pone igual (archivo, tamaño, lugar) en el resto del lote; si ya había un logo, lo reemplaza.
-- **Agregar**: texto, barra naranja, esquinero, grilla de puntos.
-- Duplicar, traer al frente, enviar atrás, eliminar, opacidad.
-- **Deshacer** / **Rehacer** (Ctrl+Z / Ctrl+Y). Flechas del teclado para mover de a 1 px (con Shift, de a 10).
-- **Guardar** reemplaza la imagen y el .zip toma la versión editada. Se puede volver a editar cuantas veces quieras.
+Tocá cualquier imagen generada y se abre el editor. El panel tiene pestañas:
+- **Agregar**: texto, título, barra, esquinero, puntos y logos. **Elegir varios** (en el celular) para juntar elementos.
+- **Capas**: todos los elementos de la pieza, de adelante hacia atrás. Arrastrá para reordenar; ojo para **ocultar**,
+  candado para **bloquear** (no se mueve por error).
+- **Fondo**: color liso de la pieza (lo que choca con el fondo nuevo cambia solo a un color que contraste).
+- Con algo elegido, **Editar**: texto, tipografía, tamaño, alineación, mayúsculas, color (de marca u otro),
+  transparencia, duplicar, **copiar estilo** (como la brocha de Canva), agrupar/desagrupar, bloquear, eliminar.
+  Con un logo: cambiarlo y **Replicar en todas las piezas**.
+- **Posición**: alinear a la página (o entre sí si hay varios), distribuir parejo, orden (al frente, adelante,
+  atrás, al fondo), giro exacto, espejar, X / Y / ancho / alto en píxeles.
+- **Guías inteligentes**: al arrastrar, todo se pega a los bordes, al centro, a los márgenes seguros y a los demás
+  elementos (línea rosa).
+- **Copiar y pegar** (también entre piezas distintas), deshacer y rehacer.
+- Atajos: Ctrl+Z / Ctrl+Shift+Z, Ctrl+C / Ctrl+V, Ctrl+D duplicar, Ctrl+G agrupar (Ctrl+Shift+G desagrupar),
+  Ctrl+A todo, flechas para mover de a 1 px (con Shift de a 10), Supr para borrar, Esc para soltar.
 
 La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Encuadre de la foto" al generar.
 
