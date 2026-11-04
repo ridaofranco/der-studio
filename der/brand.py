@@ -203,12 +203,42 @@ def logo(variant: str = "on_dark") -> Image.Image:
         None,
     )
     if chosen is None and files:
-        chosen = files[0]
+        chosen = _por_color(files, variant)
     if chosen is None:
         return _placeholder_logo(variant)
     img = Image.open(chosen).convert("RGBA")
     bbox = img.getchannel("A").getbbox()
     return img.crop(bbox) if bbox else img
+
+
+def _por_color(files: list[Path], variant: str) -> Path:
+    """Si los nombres no dicen qué versión es cada logo (fotos con nombres numéricos), se elige por su color:
+    sobre fondo oscuro o naranja el más claro, sobre fondo claro el más oscuro; primero el isotipo (cuadrado)."""
+    datos = []
+    for p in files:
+        try:
+            im = Image.open(p).convert("RGBA")
+        except OSError:
+            continue
+        bbox = im.getchannel("A").getbbox()
+        if not bbox:
+            continue
+        im = im.crop(bbox)
+        im.thumbnail((120, 120))
+        px = [(r, g, b) for r, g, b, a in im.getdata() if a > 128]
+        if not px:
+            continue
+        # luminancia de los píxeles que no son naranja (el naranja de la marca está en todas las versiones)
+        neutros = [(r, g, b) for r, g, b in px if not (r > 200 and 60 < g < 170 and b < 90)]
+        solo_naranja = len(neutros) < len(px) * 0.15
+        lum = sum(0.299 * r + 0.587 * g + 0.114 * b for r, g, b in (neutros or px)) / len(neutros or px)
+        cuadrado = 0 if max(im.size) / min(im.size) < 1.5 else 1
+        datos.append((cuadrado + (2 if solo_naranja else 0), lum, p))
+    if not datos:
+        return files[0]
+    claro = variant in ("on_dark", "on_orange", "orange")
+    datos.sort(key=lambda t: (t[0], -t[1] if claro else t[1]))
+    return datos[0][2]
 
 
 def _placeholder_logo(variant: str) -> Image.Image:

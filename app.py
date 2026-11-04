@@ -983,7 +983,11 @@ MUESTRA = graphics.Content(title="Tu título *acá*", subtitle="Un subtítulo co
 MUESTRA_TEXTO = {"dato": graphics.Content(title="+40K", subtitle="asistentes", body="En 3 días de evento."),
                  "lista": graphics.Content(title="Qué *hacemos*", body="Accesos\nTécnica\nStaff"),
                  "agenda": graphics.Content(title="Tu *evento*", subtitle="15 NOV", body="Lugar · 21 hs"),
-                 "cita": graphics.Content(title="La producción buena es la que *nadie nota*", subtitle="Nombre, cargo")}
+                 "cita": graphics.Content(title="La producción buena es la que *nadie nota*", subtitle="Nombre, cargo"),
+                 "marco_tarjeta": graphics.Content(title="Master class", subtitle="8 Nov · 13 hs", body="Nombre Apellido\nEventos"),
+                 "bloques": graphics.Content(title="Sponsor Day", subtitle="26.11.26", body="Tu marca\nAcreditación\n19 HS\nLugar\nCiudad"),
+                 "galeria": graphics.Content(title="Muestra fotográfica", subtitle="23 Nov 2026", body="Charla\nMúsica en vivo\nGalería"),
+                 "escenario": graphics.Content(title="Vision *Day*", subtitle="25/Nov · 10 a 22 hs", body="Ana\nLuis\nMaría\nJuan\nEquipo DER")}
 
 
 def _fotos_muestra(n: int) -> list[Path]:
@@ -1023,12 +1027,13 @@ def plantilla_muestra(tpl):
     if tpl not in graphics.RENDERERS:
         abort(404)
     logos = brand.LOGOS_DIR
-    firma = f"{updater.local_version()}-{int(max([p.stat().st_mtime for p in logos.glob('*')] or [0]))}-{len(brand.list_patrones())}"
+    firma = (f"{updater.local_version()}-{int(max([p.stat().st_mtime for p in logos.glob('*')] or [0]))}-"
+             f"{len(brand.list_patrones())}-{int((ROOT / 'der' / 'graphics.py').stat().st_mtime)}")
     d = OUT_DIR / ".muestras"
     d.mkdir(parents=True, exist_ok=True)
     f = d / f"{tpl}-{firma[:24]}.jpg"
     if not f.exists():
-        n = {"collage": 4, "comparar": 2, "mosaico": 7}.get(tpl, 1)
+        n = {"collage": 4, "comparar": 2, "mosaico": 7, "bloques": 3, "galeria": 7, "escenario": 5}.get(tpl, 1)
         fotos = _fotos_muestra(n) if tpl in graphics.PHOTO_TEMPLATES or tpl in ("dato", "agenda", "hablemos") else []
         tmp = d / "tmp"
         tmp.mkdir(exist_ok=True)
