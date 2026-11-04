@@ -145,3 +145,26 @@
 .ed-nav { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; }
 .ed-nav button { width: 30px !important; height: 30px !important; font-size: 20px !important; }
 .ed-pg { font: 12px "DER Sub", sans-serif; color: var(--texto-suave); min-width: 34px; text-align: center; }
+
+/* patrones, formas DER y difuminados */
+.ed-pats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ed-pats button { border: 1px solid var(--borde); border-radius: 8px; background: #fff; padding: 6px; cursor: pointer; }
+.ed-pats button:hover { border-color: var(--naranja); }
+.ed-pats img { width: 100%; display: block; }
+.ed-mods { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.ed-mods button { aspect-ratio: 1; border: 1px solid var(--borde); border-radius: 8px; background: #fff; padding: 8px; cursor: pointer; }
+.ed-mods button:hover { border-color: var(--naranja); }
+.ed-mods svg { width: 100%; height: 100%; display: block; }
+.ed-difs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ed-difs button { display: grid; gap: 4px; justify-items: center; border: 1px solid var(--borde); border-radius: 9px; background: #fff; padding: 6px 4px 5px; cursor: pointer; }
+.ed-difs button:hover { border-color: var(--naranja); }
+.ed-difs span { font-size: 11px; color: var(--texto-suave); }
+.ed-difs i { width: 100%; height: 42px; border-radius: 6px; background-color: #f4f4f4; }
+.dif-radial { background-image: radial-gradient(circle, var(--c) 0, transparent 70%); }
+.dif-abajo { background-image: linear-gradient(to top, var(--c), transparent); }
+.dif-arriba { background-image: linear-gradient(to bottom, var(--c), transparent); }
+.dif-lado { background-image: linear-gradient(to right, var(--c), transparent); }
+.dif-esquina { background-image: radial-gradient(circle at 0 100%, var(--c) 0, transparent 75%); }
+.dif-vineta { background-image: radial-gradient(circle, transparent 35%, var(--c) 100%); }
+.ed-mas { margin-top: 10px; }
+.ed-mas summary { cursor: pointer; font: 13px "DER Sub", sans-serif; color: var(--texto-suave); padding: 6px 0; }

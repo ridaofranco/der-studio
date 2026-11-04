@@ -54,8 +54,11 @@ TEMPLATES = {
     "comparar": "Antes / después (2 fotos)",
     "agenda": "Evento / agenda",
     "cinta": "Foto con cinta",
+    "hablemos": "Hablemos (contacto)",
+    "mosaico": "Mosaico de fotos",
+    "patron": "Patrón DER",
 }
-PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta"}
+PHOTO_TEMPLATES = {"impacto", "marco", "banda", "collage", "comparar", "cinta", "mosaico"}
 # Plantillas que arman UNA pieza con todas las fotos (las demás hacen una pieza por foto = carrusel)
 SINGLE_DESIGN = {  # (histórico) ahora todas arman carrusel con varias fotos
     "texto", "naranja", "collage", "cita", "dato", "lista", "comparar", "agenda"}
@@ -67,6 +70,9 @@ TEMPLATE_HINTS = {
     "comparar": "Subí 2 fotos: la primera es ANTES, la segunda DESPUÉS. Título abajo.",
     "agenda": "Título = nombre del evento · Subtítulo = fecha (ej. 15 NOV) · Texto = lugar y hora. Foto opcional.",
     "cinta": "Una pieza por foto. Título y subtítulo debajo de la foto.",
+    "hablemos": "Subtítulo = bajada naranja (ej. SOMOS DER) · Título = el mensaje · Texto: 1er renglón = mail, 2do = web. Foto opcional abajo a la derecha.",
+    "mosaico": "De 3 a 10 fotos por pieza sobre naranja con textura. Título opcional arriba.",
+    "patron": "La banda de patrón DER arriba y el texto abajo. Título · Subtítulo · Texto.",
 }
 FONT_FAMILY = {"title": "DER Titulo", "subtitle": "DER Sub", "body": "DER Cuerpo"}
 
@@ -232,11 +238,63 @@ def bottom_gradient(img, start_frac, max_alpha=235, color=DARK_RGB):
     img.paste(overlay, (0, 0), grad)
 
 
+def textura(img: Image.Image, fuerza: float = 1.0, seed: int = 7) -> Image.Image:
+    """Grano de papel y manchas suaves (como los fondos con textura de las piezas de Canva)."""
+    import numpy as np
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    rng = np.random.default_rng(seed)
+    grano = rng.normal(0, 6 * fuerza, (h, w, 1))
+    # manchas apenas perceptibles (papel), no nubes
+    chico = Image.fromarray((rng.random((max(2, h // 40), max(2, w // 40))) * 255).astype("uint8"), "L")
+    manchas = np.asarray(chico.resize((w, h), Image.BICUBIC), dtype=float)[..., None] / 255 - 0.5
+    arr = np.asarray(rgb, dtype=float) + grano + manchas * 5 * fuerza
+    out = Image.fromarray(np.clip(arr, 0, 255).astype("uint8"), "RGB")
+    if img.mode == "RGBA":
+        out.putalpha(img.getchannel("A"))
+    return out
+
+
+def difuminado(forma: str, w: int, h: int, color: str) -> Image.Image:
+    """Difuminados de color (naranja, negro…) para usar como capas: brillo, degradé desde un borde, viñeta."""
+    import numpy as np
+    w, h = max(8, min(w, 2400)), max(8, min(h, 2400))
+    y, x = np.mgrid[0:h, 0:w].astype(float)
+    nx, ny = x / (w - 1), y / (h - 1)
+    if forma == "abajo":
+        a = np.clip(ny, 0, 1) ** 1.6
+    elif forma == "arriba":
+        a = np.clip(1 - ny, 0, 1) ** 1.6
+    elif forma == "lado":
+        a = np.clip(1 - nx, 0, 1) ** 1.6
+    elif forma == "esquina":
+        a = np.clip(1 - np.hypot(nx, 1 - ny) / 1.25, 0, 1) ** 1.8
+    elif forma == "vineta":
+        a = np.clip((np.hypot(nx - 0.5, ny - 0.5) / 0.72 - 0.35) / 0.65, 0, 1) ** 1.4
+    else:  # radial: brillo suave en el centro
+        a = np.clip(1 - np.hypot(nx - 0.5, ny - 0.5) / 0.5, 0, 1) ** 2.2
+    rgb = Image.new("RGB", (w, h), color)
+    out = rgb.convert("RGBA")
+    out.putalpha(Image.fromarray((a * 255).astype("uint8"), "L"))
+    return out
+
+
+def element_from_query(kind: str, q: dict) -> Image.Image:
+    """Las URLs /elemento/<tipo>.png?… que usa el editor (también las resuelve el compositor)."""
+    return element_png(kind, corner=q.get("c", "tl"), size=int(q.get("l", 110)), thick=int(q.get("g", 10)),
+                       cols=int(q.get("cols", 6)), rows=int(q.get("rows", 4)), gap=int(q.get("gap", 28)),
+                       r=int(q.get("r", 4)), color="#" + str(q.get("color", "ff5c00")).lstrip("#"),
+                       forma=q.get("forma", "radial"), w=int(q.get("w", 800)), h=int(q.get("h", 800)))
+
+
 @lru_cache(maxsize=128)
 def element_png(kind: str, corner: str = "tl", size: int = 110, thick: int = 10,
-                cols: int = 6, rows: int = 4, gap: int = 28, r: int = 4, color: str = ORANGE) -> Image.Image:
+                cols: int = 6, rows: int = 4, gap: int = 28, r: int = 4, color: str = ORANGE,
+                forma: str = "radial", w: int = 800, h: int = 800) -> Image.Image:
     """Elementos sueltos como PNG transparente, para usarlos como capas del editor."""
     color = color if color.startswith("#") else "#" + color
+    if kind == "difuminado":
+        return difuminado(forma, w, h, color)
     if kind == "esquinero":
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         corner_brackets(ImageDraw.Draw(img), (0, 0, size - 1, size - 1), size - 1, thick - 1, color, corner)
@@ -319,9 +377,16 @@ class Design:
                             "x": round(x), "y": round(y), "w": round(width), "h": round(h)})
         return width, h
 
-    def rect(self, x, y, w, h, color, name="Barra"):
-        self.layers.append({"type": "rect", "name": name, "x": round(x), "y": round(y),
-                            "w": round(w), "h": round(h), "color": color})
+    def rect(self, x, y, w, h, color, name="Barra", radius=0, stroke=None, stroke_width=0):
+        layer = {"type": "rect", "name": name, "x": round(x), "y": round(y), "w": round(w), "h": round(h), "color": color}
+        if radius:
+            layer["rx"] = round(radius)
+        if stroke:
+            layer.update(stroke=stroke, strokeWidth=round(stroke_width))
+        self.layers.append(layer)
+
+    def image(self, src, x, y, w, h, name="Imagen"):
+        self.layers.append({"type": "image", "name": name, "src": src, "x": round(x), "y": round(y), "w": round(w), "h": round(h)})
 
     def bar(self, x, y, color=ORANGE):
         self.rect(x, y, 90 * self.s, 10 * self.s, color, "Barra")
@@ -721,6 +786,133 @@ def tpl_cinta(fmt, photos, c, first=True):
     return D
 
 
+# --- Plantillas a partir de las piezas de Canva de DER (nov 2026) --------------------------------
+
+def _rounded(img: Image.Image, r: int) -> Image.Image:
+    mask = Image.new("L", img.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, img.width - 1, img.height - 1], radius=r, fill=255)
+    out = img.convert("RGBA")
+    out.putalpha(mask)
+    return out
+
+
+def tpl_hablemos(fmt, photos, c, first=True):
+    """Fondo claro con textura, logo, bajada naranja, título grande, mail y web en píldoras, foto tipo sticker."""
+    D = Design(fmt, c, LIGHT)
+    W, H, s = D.W, D.H, D.s
+    D.base = textura(Image.new("RGBA", (W, H), LIGHT), 1.0).convert("RGBA")
+    top, bottom = _safe(fmt, H)
+    m = 80 * s
+    _, lh = D.logo("on_light", 120 * s, m, top)
+    y = top + lh + 50 * s
+    box_w = W - 2 * m
+    if c.subtitle:
+        D.text("subtitle", c.subtitle.upper(), m, y, box_w, ORANGE, int(78 * s), 1.05, name="Bajada")
+        y += 78 * s * 1.05 + 40 * s
+    if c.title:
+        size, lines = _fit_lines(c.title, "title", box_w * 0.95, H * 0.3, int(112 * s), int(48 * s), 1.08, upper=True)
+        D.text("title", "", m, y, box_w, DARK, size, 1.08, hl_color=ORANGE, lines=lines, name="Título")
+        y += len(lines) * size * 1.08
+    renglones = [ln.strip() for ln in (c.body or "").splitlines() if ln.strip()]
+    mail = renglones[0] if renglones else ""
+    web = renglones[1] if len(renglones) > 1 else brand.WEBSITE
+    pill_w, pill_h = 470 * s, 108 * s
+    py = H - bottom - pill_h * 2 - 40 * s
+    if photos:
+        # foto tipo sticker: girada, con borde naranja grueso y sombra, abajo a la derecha
+        pw = int(W * (0.42 if fmt == "historia" else 0.46))
+        ph = int(pw * 1.28)
+        card = _rounded(cover(photos[0], pw, ph, c.focus), int(26 * s))
+        b = int(16 * s)
+        frame = Image.new("RGBA", (pw + 2 * b, ph + 2 * b), (0, 0, 0, 0))
+        ImageDraw.Draw(frame).rounded_rectangle([0, 0, frame.width - 1, frame.height - 1], radius=int(36 * s), fill=ORANGE)
+        frame.paste(card, (b, b), card)
+        rot = frame.rotate(-9, expand=True, resample=Image.BICUBIC)
+        from PIL import ImageFilter
+        sh = Image.new("RGBA", rot.size, (0, 0, 0, 0))
+        sh.putalpha(rot.getchannel("A").point(lambda a: int(a * 0.35)))
+        # sale un poco por el borde derecho y por abajo, como el sticker de la pieza de Canva
+        fx, fy = W - rot.width * 0.9, H - rot.height * (0.82 if fmt == "historia" else 0.88) - (bottom * 0.6 if fmt == "historia" else 0)
+        D.over(sh.filter(ImageFilter.GaussianBlur(18 * s)), (fx + 10 * s, fy + 18 * s))
+        D.over(rot, (fx, fy))
+    if mail:
+        D.rect(m, py, pill_w, pill_h, DARK, "Píldora mail", radius=pill_h / 2)
+        fs, ln = _fit_lines(mail, "subtitle", pill_w - 60 * s, pill_h * 0.6, int(40 * s), int(20 * s), 1.0, max_lines=1)
+        D.text("subtitle", "", m, py + (pill_h - fs) / 2 - 2 * s, pill_w, WHITE, fs, 1.0, lines=ln, align="center", name="Mail")
+        py += pill_h + 40 * s
+    D.rect(m + 10 * s, py, pill_w - 10 * s, pill_h, "rgba(0,0,0,0)", "Píldora web", radius=pill_h / 2, stroke=ORANGE, stroke_width=5 * s)
+    fs, ln = _fit_lines(web, "subtitle", pill_w - 70 * s, pill_h * 0.6, int(40 * s), int(20 * s), 1.0, max_lines=1)
+    D.text("subtitle", "", m + 10 * s, py + (pill_h - fs) / 2 - 2 * s, pill_w - 10 * s, DARK, fs, 1.0, lines=ln, align="center", name="Web")
+    return D
+
+
+def tpl_mosaico(fmt, photos, c, first=True):
+    """3 a 10 fotos con esquinas redondeadas en columnas, sobre naranja con textura y formas de marca."""
+    D = Design(fmt, c, ORANGE)
+    W, H, s = D.W, D.H, D.s
+    base = Image.new("RGBA", (W, H), ORANGE)
+    d = ImageDraw.Draw(base)
+    ghost = "#ff7a2e"
+    R = int(W * 0.36)
+    for cx, cy in ((W * 0.15, H * 0.02), (W * 0.82, H * 0.5), (W * 0.2, H * 0.98)):
+        d.ellipse([cx - R, cy - R, cx + R, cy + R], outline=ghost, width=int(70 * s))
+    D.base = textura(base, 1.3)
+    top, bottom = _safe(fmt, H)
+    m, g = int(46 * s), int(18 * s)
+    y0 = m if fmt != "historia" else top - 60 * s
+    if c.title and first:
+        size, lines = _fit_lines(c.title, "title", W - 2 * m, H * 0.12, int(70 * s), int(36 * s), 1.05, upper=True)
+        D.text("title", "", m, y0, W - 2 * m, WHITE, size, 1.05, hl_color=DARK, lines=lines, name="Título")
+        y0 += len(lines) * size * 1.05 + 26 * s
+    y1 = H - (m if fmt != "historia" else bottom - 80 * s)
+    n = max(1, len(photos))
+    cols = 1 if n == 1 else 2 if n <= 4 else 3
+    colw = (W - 2 * m - (cols - 1) * g) / cols
+    columnas = [[] for _ in range(cols)]
+    for i, ph in enumerate(photos):
+        columnas[i % cols].append(ph)
+    r = int(24 * s)
+    for ci, col in enumerate(columnas):
+        if not col:
+            continue
+        # alturas desparejas (como un mosaico): se reparten según el formato de cada foto
+        pesos = [min(1.6, max(0.6, ph.height / ph.width)) * (1.0 + 0.18 * ((ci + k) % 2)) for k, ph in enumerate(col)]
+        alto = y1 - y0 - g * (len(col) - 1)
+        y = y0
+        for ph, wgt in zip(col, pesos):
+            hh = alto * wgt / sum(pesos)
+            card = _rounded(cover(ph, int(colw), int(hh), c.focus), r)
+            D.over(card, (m + ci * (colw + g), y))
+            y += hh + g
+    return D
+
+
+def tpl_patron(fmt, photos, c, first=True):
+    """Banda de patrón DER arriba (como elemento: se puede cambiar o mover) y el texto abajo."""
+    D = Design(fmt, c, WHITE)
+    W, H, s = D.W, D.H, D.s
+    top, bottom = _safe(fmt, H)
+    pats = brand.list_patrones()
+    band_h = 0
+    if pats:
+        k = (sum(map(ord, c.title or "")) % len(pats))
+        pat = pats[k]
+        im = Image.open(brand.PATRONES_DIR / pat)
+        band_h = W * im.height / im.width
+        D.image(f"/patron/{pat}", 0, 0, W, band_h, "Patrón DER")
+    m = 90 * s
+    box_w = W - 2 * m
+    y = max(band_h + 80 * s, top)
+    avail = H - bottom - y - 140 * s
+    block = D.measure(box_w, avail, 104)
+    y += max(0, (avail - block - 50 * s) * 0.4)   # el texto, algo arriba del centro del espacio libre
+    D.bar(m, y)
+    D.text_block(m, y + 50 * s, box_w, avail, DARK, ORANGE, DARK, title_size=104)
+    D.logo("on_light", 170 * s, m, H - bottom, "lb")
+    D.tag(W - m, H - bottom, DARK, align="right")
+    return D
+
+
 RENDERERS = {
     "impacto": tpl_impacto,
     "marco": tpl_marco,
@@ -734,6 +926,9 @@ RENDERERS = {
     "comparar": tpl_comparar,
     "agenda": tpl_agenda,
     "cinta": tpl_cinta,
+    "hablemos": tpl_hablemos,
+    "mosaico": tpl_mosaico,
+    "patron": tpl_patron,
 }
 
 
@@ -747,7 +942,7 @@ def relayout(origen: dict, fmt: str, fotos_dir: Path) -> "Design":
 PER_PHOTO = {"impacto", "marco", "banda", "cinta"}
 # Diapositivas siguientes de un carrusel para las plantillas de texto: misma onda, una por foto
 CONTINUATION = {"texto": "impacto", "naranja": "banda", "cita": "marco", "lista": "marco",
-                "dato": "impacto", "agenda": "impacto"}
+                "dato": "impacto", "agenda": "impacto", "hablemos": "marco", "patron": "marco"}
 
 
 def _chunks(items: list, size: int) -> list[list]:
@@ -768,12 +963,14 @@ def slides(template: str, photos: list) -> list[tuple[str, list, bool]]:
         return [(template, [p], True) for p in photos]
     if template == "collage":
         return [("collage", g, True) for g in _chunks(photos, 4)]
+    if template == "mosaico":
+        return [("mosaico", g, True) for g in _chunks(photos, 10)]
     if template == "comparar":
         out = [("comparar", photos[k:k + 2], True) for k in range(0, len(photos) - 1, 2)]
         if len(photos) % 2:
             out.append(("impacto", photos[-1:], False))
         return out
-    lead = photos[:1] if template in ("dato", "agenda") else []
+    lead = photos[:1] if template in ("dato", "agenda", "hablemos") else []
     rest = photos[len(lead):]
     return [(template, lead, True)] + [(CONTINUATION[template], [p], False) for p in rest]
 

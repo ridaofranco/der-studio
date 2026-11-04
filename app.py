@@ -936,6 +936,11 @@ def api_borrar_logo(name):
     return jsonify(estado=brand.status())
 
 
+@app.get("/patron/<name>")
+def patron(name):
+    return send_from_directory(brand.PATRONES_DIR, secure_filename(name), max_age=3600)
+
+
 @app.get("/elemento/<kind>.png")
 def elemento(kind):
     from io import BytesIO
@@ -943,10 +948,7 @@ def elemento(kind):
     from flask import send_file
     a = request.args
     try:
-        img = graphics.element_png(kind, corner=a.get("c", "tl"), size=int(a.get("l", 110)),
-                                   thick=int(a.get("g", 10)), cols=int(a.get("cols", 6)),
-                                   rows=int(a.get("rows", 4)), gap=int(a.get("gap", 28)),
-                                   r=int(a.get("r", 4)), color="#" + a.get("color", "ff5c00"))
+        img = graphics.element_from_query(kind, a.to_dict())
     except ValueError:
         abort(404)
     buf = BytesIO()

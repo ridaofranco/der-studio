@@ -27,12 +27,9 @@ def _image_for(src: str) -> Image.Image:
         kind, _, value = unquote(u.path[len("/logos/ver/"):]).partition(":")
         return brand.logo_file(value) if kind == "file" else brand.logo(value or "on_dark")
     if u.path.startswith("/elemento/"):
-        kind = Path(u.path).stem
-        q = {k: v[0] for k, v in parse_qs(u.query).items()}
-        return graphics.element_png(kind, corner=q.get("c", "tl"), size=int(q.get("l", 110)),
-                                    thick=int(q.get("g", 10)), cols=int(q.get("cols", 6)),
-                                    rows=int(q.get("rows", 4)), gap=int(q.get("gap", 28)),
-                                    r=int(q.get("r", 4)), color="#" + q.get("color", "ff5c00"))
+        return graphics.element_from_query(Path(u.path).stem, {k: v[0] for k, v in parse_qs(u.query).items()})
+    if u.path.startswith("/patron/"):
+        return Image.open(brand.PATRONES_DIR / Path(u.path).name).convert("RGBA")
     raise ValueError(f"No sé componer la imagen {src}")
 
 
@@ -76,8 +73,10 @@ def compose(design: dict, base_path: Path) -> Image.Image:
         if t == "text":
             _text(d, layer)
         elif t == "rect":
-            d.rectangle([layer["x"], layer["y"], layer["x"] + layer["w"] - 1, layer["y"] + layer["h"] - 1],
-                        fill=layer["color"])
+            box = [layer["x"], layer["y"], layer["x"] + layer["w"] - 1, layer["y"] + layer["h"] - 1]
+            fill = None if str(layer["color"]).startswith("rgba(0,0,0,0") else layer["color"]
+            d.rounded_rectangle(box, radius=layer.get("rx", 0), fill=fill,
+                                outline=layer.get("stroke"), width=layer.get("strokeWidth", 0) or 0)
         else:
             el = _image_for(layer["src"]).convert("RGBA").resize((max(1, round(layer["w"])), max(1, round(layer["h"]))),
                                                                  Image.LANCZOS)

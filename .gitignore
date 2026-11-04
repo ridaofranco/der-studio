@@ -18,3 +18,5 @@ brand/fonts/*
 .avisos/
 # plantillas de reels guardadas desde el editor (propias de cada instalación)
 brand/plantillas/
+# patrones de la marca (imágenes propias, como los logos)
+brand/patrones/*

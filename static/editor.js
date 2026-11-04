@@ -13,6 +13,18 @@
  */
 (function () {
   const BRAND = { naranja: "#ff5c00", oscuro: "#333333", claro: "#f0f0f0", blanco: "#ffffff" };
+  // paleta de los patrones de la marca (para las formas DER)
+  const PALETA = { naranja: "#ff5c00", "naranja claro": "#f58b22", oscuro: "#333333", negro: "#1b1b1b", gris: "#8a8889", claro: "#f0f0f0" };
+  // módulos de los patrones DER (caja de 100×100)
+  const MODULOS = {
+    cuarto: ["Cuarto de círculo", "M0 100 A100 100 0 0 1 100 0 L100 100 Z"],
+    circulo: ["Círculo", "M50 0 A50 50 0 1 1 49.99 0 Z"],
+    semicirculo: ["Medio círculo", "M0 75 A50 50 0 0 1 100 75 Z"],
+    anillo: ["Arco", "M0 100 A100 100 0 0 1 100 0 L100 50 A50 50 0 0 0 50 100 Z"],
+    triangulo: ["Triángulo", "M0 0 L100 100 L0 100 Z"],
+    hoja: ["Hoja", "M0 100 A100 100 0 0 1 100 0 A100 100 0 0 1 0 100 Z"],
+  };
+  const DIFUMINADOS = { radial: "Brillo", abajo: "Desde abajo", arriba: "Desde arriba", lado: "Desde un lado", esquina: "Esquina", vineta: "Viñeta" };
   const FAMILIES = { title: "DER Titulo", subtitle: "DER Sub", body: "DER Cuerpo" };
   const EXTRA = ["name", "logo", "role", "bloqueado", "efecto", "curvo", "forma", "degradado", "foto", "rid"];
   if (window.fabric) fabric.filterBackend = new fabric.Canvas2dFilterBackend();  // sin límite de tamaño de textura
@@ -35,7 +47,8 @@
       });
     }
     if (l.type === "rect") {
-      return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name });
+      return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name, forma: l.rx ? "rect" : undefined,
+        rx: l.rx || 0, ry: l.rx || 0, stroke: l.stroke || null, strokeWidth: l.strokeWidth || 0 });
     }
     const img = await loadImage(l.src);
     img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null });
@@ -240,7 +253,7 @@
     return wrap;
   }
 
-  async function open(design, { logos = [], onSave, siblings = [], onSaveOther, lote = "", onNav } = {}) {
+  async function open(design, { logos = [], patrones = [], onSave, siblings = [], onSaveOther, lote = "", onNav } = {}) {
     await loadFonts();
     const root = ui(siblings.length > 1 && !!onNav);
     const $ = s => root.querySelector(s);
@@ -375,17 +388,22 @@
           <button data-add="combo-dato" class="ed-card ed-combo"><b class="n">+40K</b><small>asistentes</small><span>Dato</span></button>
           <button data-add="combo-etiqueta" class="ed-card ed-combo"><b class="tag">NUEVO</b><span>Etiqueta</span></button>
         </div>
-        <h3>Formas</h3><div class="ed-grid4">
+        ${patrones.length ? `<h3>Patrones DER</h3><div class="ed-pats">${patrones.map(n => `<button data-add="patron:${n}" aria-label="Patrón"><img src="/patron/${n}" alt=""></button>`).join("")}</div>` : ""}
+        <h3>Formas DER</h3><div class="ed-mods">${Object.entries(MODULOS).map(([k, [n, d]], i) => {
+          const col = Object.values(PALETA)[i % 5];
+          return `<button data-add="modulo:${k}" title="${n}" aria-label="${n}"><svg viewBox="0 0 100 100"><path d="${d}" fill="${col}"/></svg></button>`;
+        }).join("")}</div>
+        <p class="ed-tip" style="margin-top:4px">Con la forma elegida: girala de a 90°, cambiale el color de la paleta o duplicala para armar tu propio patrón.</p>
+        <h3>Difuminados</h3><div class="ed-difs">${["#ff5c00", "#1b1b1b"].map(col => Object.entries(DIFUMINADOS).map(([k, n]) =>
+          `<button data-add="dif:${k}:${col.slice(1)}" title="${n}" aria-label="Difuminado ${n}"><i class="dif-${k}" style="--c:${col}"></i><span>${n}</span></button>`).join("")).join("")}</div>
+        <details class="ed-mas"><summary>Más formas</summary><div class="ed-grid4">
           ${shape("rect", `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12"/></svg>`, "Rectángulo")}
           ${shape("redondeado", `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="4"/></svg>`, "Redondeado")}
           ${shape("circulo", `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`, "Círculo")}
-          ${shape("triangulo", `<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/></svg>`, "Triángulo")}
-          ${shape("estrella5", `<svg viewBox="0 0 24 24"><path d="${ICONOS.estrella}"/></svg>`, "Estrella")}
           ${shape("linea", `<svg viewBox="0 0 24 24"><path d="M3 12h18" class="st"/></svg>`, "Línea")}
           ${shape("flecha", `<svg viewBox="0 0 24 24"><path d="${ICONOS.flecha}" class="st"/></svg>`, "Flecha")}
           ${shape("barra", `<i class="ed-cbar"></i>`, "Barra")}
-        </div>
-        <h3>Íconos</h3><div class="ed-icons">${Object.entries(ICONOS).map(([k, d]) => `<button data-add="icono:${k}" title="${k}" aria-label="Ícono ${k}"><svg viewBox="0 0 24 24"><path d="${d}"/></svg></button>`).join("")}</div>
+        </div></details>
         <h3>Fotos</h3><div class="ed-grid2">
           <button data-a="subir-foto" class="ed-card"><i class="ed-cfoto"></i><span>Subir foto</span></button>
           <button data-a="foto-fondo" class="ed-card"><i class="ed-cfoto f"></i><span>Foto de fondo</span></button>
@@ -533,6 +551,9 @@
 
     function formaHTML(o) {
       let h = "";
+      if (o.forma === "modulo") h += `<h3>Forma DER</h3><div class="ed-btns"><button data-a="rot90l">⟲ 90°</button><button data-a="rot90r">⟳ 90°</button>
+        <button data-a="fliph">Espejar ⇆</button></div>
+        <label>Color de la paleta</label><div class="ed-sw">${Object.entries(PALETA).map(([n, v]) => `<button data-color="${v}" title="${n}" style="background:${v}"></button>`).join("")}</div>`;
       if (!isStroke(o)) {
         const g = o.degradado;
         h += `<h3>Relleno</h3><div class="ed-btns"><button data-fill="solido" class="${g ? "" : "on"}">Sólido</button><button data-fill="degradado" class="${g ? "on" : ""}">Degradado</button></div>`;
@@ -989,6 +1010,27 @@
         o.scale(160 * s / 24);
       }
       if (k.startsWith("combo-")) return addCombo(k.slice(6));
+      if (k.startsWith("patron:")) {
+        o = await loadImage("/patron/" + k.slice(7));
+        o.set({ name: "Patrón DER", left: 0, top: 0 }); o.scale(design.W / o.width);
+        canvas.add(o); canvas.setActiveObject(o); canvas.requestRenderAll(); return;
+      }
+      if (k.startsWith("modulo:")) {
+        const [, key] = k.split(":");
+        o = new fabric.Path(MODULOS[key][1], { fill: PALETA.naranja, name: MODULOS[key][0], forma: "modulo" });
+        o.scale(240 * s / 100);
+      }
+      if (k.startsWith("dif:")) {
+        const [, forma, col] = k.split(":");
+        const size = { radial: [0.9, 0.9 * design.W / design.H], abajo: [1, 0.55], arriba: [1, 0.55], lado: [0.6, 1], esquina: [0.9, 0.75], vineta: [1, 1] }[forma];
+        const w = Math.round(design.W * size[0]), h = Math.round(design.H * size[1]);
+        o = await loadImage(`/elemento/difuminado.png?forma=${forma}&w=${Math.round(w / 2)}&h=${Math.round(h / 2)}&color=${col}`);
+        o.set({ name: "Difuminado", scaleX: w / o.width, scaleY: h / o.height });
+        const pos = { abajo: [0, design.H - h], arriba: [0, 0], lado: [0, 0], esquina: [0, design.H - h], vineta: [0, 0] }[forma];
+        if (pos) { o.set({ left: pos[0], top: pos[1] }); canvas.add(o); }
+        else canvas.add(center(o));
+        canvas.setActiveObject(o); canvas.requestRenderAll(); return;
+      }
       if (!o) return;
       canvas.add(center(o)); canvas.setActiveObject(o); canvas.requestRenderAll();
     }
@@ -1102,6 +1144,8 @@
       lock() { const o = active(); const on = !o.bloqueado; (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(x => applyLock(x, on)); if (o.type === "activeSelection") applyLock(o, on); canvas.requestRenderAll(); snapshot(); panel(); },
       group() { const o = active(); if (o.type !== "activeSelection") return; const g = o.toGroup(); g.set({ name: "Grupo" }); canvas.requestRenderAll(); snapshot(); panel(); },
       ungroup() { const o = active(); if (o.type !== "group") return; o.toActiveSelection(); canvas.requestRenderAll(); snapshot(); panel(); },
+      rot90l() { const o = active(); o.rotate(((o.angle || 0) + 270) % 360); o.setCoords(); canvas.requestRenderAll(); snapshot(); },
+      rot90r() { const o = active(); o.rotate(((o.angle || 0) + 90) % 360); o.setCoords(); canvas.requestRenderAll(); snapshot(); },
       bold() { const o = active(); o.set("fontWeight", o.fontWeight === "bold" ? "normal" : "bold"); o.initDimensions(); canvas.requestRenderAll(); snapshot(); panel(); },
       italic() { const o = active(); o.set("fontStyle", o.fontStyle === "italic" ? "normal" : "italic"); o.initDimensions(); canvas.requestRenderAll(); snapshot(); panel(); },
       underline() { const o = active(); o.set("underline", !o.underline); canvas.requestRenderAll(); snapshot(); panel(); },
@@ -1247,7 +1291,8 @@
       if (mod && k === "d" && !typing && o) { e.preventDefault(); actions.dup(); return; }
       if (mod && k === "g" && !typing && o) { e.preventDefault(); actions[e.shiftKey ? "ungroup" : "group"](); return; }
       if (mod && k === "a" && !typing) { e.preventDefault(); canvas.discardActiveObject(); const all = canvas.getObjects().filter(x => x.visible !== false && !x.bloqueado); if (all.length) canvas.setActiveObject(all.length > 1 ? new fabric.ActiveSelection(all, { canvas }) : all[0]); canvas.requestRenderAll(); return; }
-      if (e.key === "Escape" && !typing) { if (o) { canvas.discardActiveObject(); canvas.requestRenderAll(); } else close(); return; }
+      // Escape solo suelta la selección (no cierra el editor: se podían perder cambios)
+      if (e.key === "Escape" && !typing) { if (o) { canvas.discardActiveObject(); canvas.requestRenderAll(); } return; }
       if (!o || typing) return;
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); actions.del(); }
       const step = e.shiftKey ? 10 : 1;
@@ -1259,7 +1304,7 @@
     // varios cambios juntos (pegar, duplicar o borrar varios) = un solo paso de deshacer
     function batch(fn) { ed.batching = true; try { fn(); } finally { ed.batching = false; } snapshot(); }
     function snapshot() {
-      if (ed.restoring || ed.batching) return;
+      if (!ed || ed.restoring || ed.batching) return;
       const st = JSON.stringify(canvas.toJSON(EXTRA));
       if (ed.history.at(-1) === st) return;
       ed.history.push(st); if (ed.history.length > 80) ed.history.shift();

@@ -62,6 +62,9 @@ Al generar (posteos, historias o reels) elegís el logo:
 
 Tocá cualquier imagen generada y se abre el editor. El panel tiene pestañas:
 - **Agregar**: texto, título, barra, esquinero, puntos y logos. **Elegir varios** (en el celular) para juntar elementos.
+- **Patrones DER** (las 6 bandas de la marca, en `brand/patrones/`), **Formas DER** (los módulos de los patrones:
+  cuarto de círculo, círculo, medio círculo, arco, triángulo y hoja, con la paleta de la marca y giro de a 90°) y
+  **Difuminados** naranja y negro (brillo, desde abajo, desde arriba, desde un lado, esquina y viñeta).
 - **Agregar** también: combinaciones de texto (título + bajada, cita, dato, etiqueta), formas (rectángulo,
   redondeado, círculo, triángulo, estrella, línea, flecha) e íconos (ubicación, calendario, entrada, micrófono…).
 - **Efectos de texto**: sombra, contorno, hueco, neón, resaltado y **curvo** (se puede quitar la curva). Negrita,
@@ -112,6 +115,9 @@ La foto de fondo no se mueve desde el editor; para cambiar el encuadre usá "Enc
 | Antes / después | 2 fotos (la primera es ANTES) con etiquetas y línea naranja |
 | Evento / agenda | subtítulo = fecha (`15 NOV`) en bloque naranja, título = evento, texto = lugar y hora; foto opcional |
 | Foto con cinta | foto impresa con borde blanco, girada y pegada con cinta naranja; una pieza por foto |
+| Hablemos (contacto) | fondo claro con textura, bajada naranja, título, mail y web en píldoras y foto tipo sticker con borde naranja |
+| Mosaico de fotos | de 3 a 10 fotos con esquinas redondeadas sobre naranja con textura y formas de marca |
+| Patrón DER | la banda de patrón de la marca arriba y el texto abajo |
 
 - En el título, lo que pongas `*entre asteriscos*` va resaltado en naranja.
 - Con varias fotos se arma un **carrusel en cualquier plantilla** (hasta 20 diapositivas): el texto va solo en la primera, salvo que marques "Texto en todas".

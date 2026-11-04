@@ -569,7 +569,7 @@ async function mostrarPiezas(box, lote, disenos) {
   };
   const bajar = (blob, nombre) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = nombre; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
   const editar = i => DEREditor.open(disenos[i], {
-    logos: ESTADO.logos, lote, siblings: disenos,
+    logos: ESTADO.logos, patrones: ESTADO.patrones || [], lote, siblings: disenos,
     onSave: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
     onSaveOther: async (dd, blob) => { dd.final = await guardarPieza(lote, dd, blob); pintar(disenos.indexOf(dd)); },
     onNav: k => editar(k),
@@ -707,7 +707,7 @@ async function mostrarCarrusel(box, lote, slides) {
     if (sl.tipo === "video") return;
     const d = sl.diseno, c = cards[i];
     c.querySelector(".img").onclick = () => DEREditor.open(d, {
-      logos: ESTADO.logos,
+      logos: ESTADO.logos, patrones: ESTADO.patrones || [], lote,
       siblings: fotos,
       onSaveOther: async (dd, blob) => {
         const j = slides.findIndex(x => x.diseno === dd), url = await guardarPieza(lote, dd, blob);
@@ -931,6 +931,12 @@ $("#fReelTpl").onsubmit = async e => {
     seguirTrabajo(j.job, "reel");
   } catch (err) { showError(box, sinConexion(err)); } finally { btn.disabled = false; }
 };
+
+// ayuda de qué va en cada campo según la plantilla elegida
+const AYUDA_PLANTILLA = {{ template_hints|tojson }};
+const pintarAyuda = () => { const r = document.querySelector("input[name=plantilla]:checked"); $("#plantillaAyuda").textContent = r ? AYUDA_PLANTILLA[r.value] || "" : ""; };
+document.querySelectorAll("input[name=plantilla]").forEach(r => r.addEventListener("change", pintarAyuda));
+pintarAyuda();
 
 let ESTADO = { logos: [] };
 const logoSrc = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");

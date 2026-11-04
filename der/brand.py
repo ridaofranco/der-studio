@@ -23,6 +23,7 @@ BRAND_DIR = ROOT / "brand"
 FONTS_DIR = BRAND_DIR / "fonts"
 LOGOS_DIR = BRAND_DIR / "logos"
 MUSIC_DIR = BRAND_DIR / "music"
+PATRONES_DIR = BRAND_DIR / "patrones"   # bandas de patrón de la marca (fuera del repo, como los logos)
 
 ORANGE = "#ff5c00"
 DARK = "#333333"
@@ -162,6 +163,10 @@ def has_real_logo() -> bool:
     return bool(_logo_files())
 
 
+def list_patrones() -> list[str]:
+    return sorted(p.name for p in PATRONES_DIR.glob("*.png")) if PATRONES_DIR.is_dir() else []
+
+
 def list_logos() -> list[str]:
     return [p.name for p in _logo_files()]
 
@@ -238,6 +243,7 @@ def status() -> dict:
         "fuentes_incompletas": INCOMPLETAS.copy(),
         "logo_oficial": has_real_logo(),
         "logos": list_logos(),
+        "patrones": list_patrones(),
         "titulo": fs.title.name,
         "subtitulo": fs.subtitle.name,
         "cuerpo": fs.body.name,
