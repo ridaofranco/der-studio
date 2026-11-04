@@ -14,7 +14,7 @@
 (function () {
   const BRAND = { naranja: "#ff5c00", oscuro: "#333333", claro: "#f0f0f0", blanco: "#ffffff" };
   const FAMILIES = { title: "DER Titulo", subtitle: "DER Sub", body: "DER Cuerpo" };
-  const EXTRA = ["name", "logo", "role", "bloqueado"];
+  const EXTRA = ["name", "logo", "role", "bloqueado", "efecto", "curvo", "forma", "degradado"];
   const FS_MULT = 1.13; // fabric.Text._fontSizeMult
   const CLIP_KEY = "derPortapapeles";
 
@@ -45,6 +45,71 @@
     const out = {};
     for (const li in s || {}) { out[+li] = {}; for (const ci in s[li]) out[+li][+ci] = s[li][ci]; }
     return out;
+  }
+
+  // --- Texto curvo: se dibuja letra por letra sobre un arco (como el "Curvar" de Canva) ---------
+  /** opts: {texto, family, size, fill, curva (-100..100), espaciado (px), stroke, strokeWidth, sombra}. Devuelve {url, w, h}. */
+  function curvedText(o) {
+    const cv = document.createElement("canvas"), ctx = cv.getContext("2d");
+    const font = `${o.size}px "${o.family}"`;
+    ctx.font = font;
+    const chars = [...(o.texto || " ")];
+    const widths = chars.map(ch => ctx.measureText(ch).width + (o.espaciado || 0));
+    const total = widths.reduce((a, b) => a + b, 0) - (o.espaciado || 0);
+    const ang = Math.max(0.05, Math.abs(o.curva) / 100 * Math.PI * 1.7);
+    const R = Math.max(total / ang, o.size * 0.8);
+    const up = o.curva >= 0, pad = o.size * 0.6 + (o.strokeWidth || 0);
+    // posiciones de cada letra sobre el arco (centro del círculo en 0,0)
+    let a0 = -ang / 2, acc = 0;
+    const pts = chars.map((ch, i) => {
+      const mid = acc + widths[i] / 2 - (o.espaciado || 0) / 2;
+      acc += widths[i];
+      const th = a0 + mid / R;
+      return { ch, th };
+    });
+    const rr = up ? R : R + o.size * 0.75;
+    const xs = pts.map(p => Math.sin(p.th) * rr), ys = pts.map(p => (up ? -1 : 1) * Math.cos(p.th) * rr);
+    const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad, minY = Math.min(...ys) - pad - o.size * 0.4, maxY = Math.max(...ys) + pad + o.size * 0.4;
+    cv.width = Math.ceil(maxX - minX); cv.height = Math.ceil(maxY - minY);
+    ctx.font = font; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    if (o.sombra) { ctx.shadowColor = o.sombra.color; ctx.shadowBlur = o.sombra.blur; ctx.shadowOffsetX = o.sombra.offsetX; ctx.shadowOffsetY = o.sombra.offsetY; }
+    pts.forEach((p, i) => {
+      ctx.save();
+      ctx.translate(xs[i] - minX, ys[i] - minY);
+      ctx.rotate(up ? p.th : -p.th);
+      if (o.strokeWidth) { ctx.lineWidth = o.strokeWidth * 2; ctx.strokeStyle = o.stroke; ctx.lineJoin = "round"; ctx.strokeText(p.ch, 0, up ? 0 : o.size * 0.75); }
+      if (o.fill && o.fill !== "transparent") { ctx.fillStyle = o.fill; ctx.fillText(p.ch, 0, up ? 0 : o.size * 0.75); }
+      ctx.restore();
+    });
+    return { url: cv.toDataURL("image/png"), w: cv.width, h: cv.height };
+  }
+
+  // Íconos (trazo, 24×24) para agregar como elemento
+  const ICONOS = {
+    estrella: "M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z",
+    corazon: "M12 20s-7-4.4-9-8.6C1.6 8 3.6 5 6.8 5c2 0 3.3 1.1 4.2 2.4C11.9 6.1 13.2 5 15.2 5c3.2 0 5.2 3 3.8 6.4C19 15.6 12 20 12 20z",
+    ubicacion: "M12 21s-6-5.7-6-11a6 6 0 0 1 12 0c0 5.3-6 11-6 11zM12 7.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z",
+    calendario: "M4 6h16v14H4zM4 10h16M8 3v5M16 3v5",
+    reloj: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+    entrada: "M3 8a2 2 0 0 0 0 4v4h18v-4a2 2 0 0 1 0-4V4H3zM14 4v12",
+    micro: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
+    musica: "M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+    check: "M4 12.5l5 5L20 6.5",
+    telefono: "M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2",
+    mail: "M3 6h18v12H3zM3 6l9 7 9-7",
+    flecha: "M5 12h14M13 6l6 6-6 6",
+    rayo: "M13 2L4 14h7l-1 8 9-12h-7z",
+    persona: "M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21a8 8 0 0 1 16 0",
+    camara: "M4 8h4l2-3h4l2 3h4v11H4zM12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z",
+    copa: "M7 3h10l-1 7a4 4 0 0 1-8 0zM12 14v6M8 21h8",
+  };
+
+  /** Degradado lineal para un relleno: {a, b, ang (grados)}. */
+  function gradient(g) {
+    const r = (g.ang || 0) * Math.PI / 180, dx = Math.cos(r) / 2, dy = Math.sin(r) / 2;
+    return new fabric.Gradient({ type: "linear", gradientUnits: "percentage",
+      coords: { x1: 0.5 - dx, y1: 0.5 - dy, x2: 0.5 + dx, y2: 0.5 + dy },
+      colorStops: [{ offset: 0, color: g.a }, { offset: 1, color: g.b }] });
   }
 
   /** Bloquear o desbloquear un elemento (se puede elegir igual, para desbloquearlo). */
@@ -253,10 +318,27 @@
     }
 
     function agregarHTML() {
-      return `<div class="ed-grid2">
+      const shape = (k, inner, n) => `<button data-add="${k}" class="ed-card"><i class="ed-sh">${inner}</i><span>${n}</span></button>`;
+      return `<h3>Textos</h3><div class="ed-grid2">
           <button data-add="texto" class="ed-card"><b class="ed-ct">Aa</b><span>Texto</span></button>
           <button data-add="titulo" class="ed-card"><b class="ed-ct t">TÍTULO</b><span>Título</span></button>
-          <button data-add="barra" class="ed-card"><i class="ed-cbar"></i><span>Barra</span></button>
+          <button data-add="combo-bajada" class="ed-card ed-combo"><b class="t">GRAN TÍTULO</b><small>con su bajada</small><span>Título + bajada</span></button>
+          <button data-add="combo-cita" class="ed-card ed-combo"><b class="q">“</b><small>Una frase</small><span>Cita</span></button>
+          <button data-add="combo-dato" class="ed-card ed-combo"><b class="n">+40K</b><small>asistentes</small><span>Dato</span></button>
+          <button data-add="combo-etiqueta" class="ed-card ed-combo"><b class="tag">NUEVO</b><span>Etiqueta</span></button>
+        </div>
+        <h3>Formas</h3><div class="ed-grid4">
+          ${shape("rect", `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12"/></svg>`, "Rectángulo")}
+          ${shape("redondeado", `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="4"/></svg>`, "Redondeado")}
+          ${shape("circulo", `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>`, "Círculo")}
+          ${shape("triangulo", `<svg viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/></svg>`, "Triángulo")}
+          ${shape("estrella5", `<svg viewBox="0 0 24 24"><path d="${ICONOS.estrella}"/></svg>`, "Estrella")}
+          ${shape("linea", `<svg viewBox="0 0 24 24"><path d="M3 12h18" class="st"/></svg>`, "Línea")}
+          ${shape("flecha", `<svg viewBox="0 0 24 24"><path d="${ICONOS.flecha}" class="st"/></svg>`, "Flecha")}
+          ${shape("barra", `<i class="ed-cbar"></i>`, "Barra")}
+        </div>
+        <h3>Íconos</h3><div class="ed-icons">${Object.entries(ICONOS).map(([k, d]) => `<button data-add="icono:${k}" title="${k}" aria-label="Ícono ${k}"><svg viewBox="0 0 24 24"><path d="${d}"/></svg></button>`).join("")}</div>
+        <h3>Marca</h3><div class="ed-grid2">
           <button data-add="esquinero" class="ed-card"><i class="ed-ccor"></i><span>Esquinero</span></button>
           <button data-add="puntos" class="ed-card"><i class="ed-cdots"></i><span>Puntos</span></button>
         </div>
@@ -294,6 +376,7 @@
       const o = active();
       const isText = o.type === "textbox", isLogo = !!o.logo, isSel = o.type === "activeSelection";
       let h = `<h3>${esc(kindName(o))}${o.bloqueado ? " · bloqueado" : ""}</h3>`;
+      if (o.curvo) h += curvoHTML(o);
       if (isText) {
         h += `<label>Texto</label><textarea data-p="text" rows="3">${esc(o.text)}</textarea>
           <label>Tipografía</label><select data-p="role">
@@ -304,15 +387,24 @@
           <div class="ed-btns ed-align">
             <button data-align="left" class="${o.textAlign === "left" ? "on" : ""}">Izq.</button><button data-align="center" class="${o.textAlign === "center" ? "on" : ""}">Centro</button>
             <button data-align="right" class="${o.textAlign === "right" ? "on" : ""}">Der.</button><button data-a="upper" title="Pasar a mayúsculas">AA</button>
-          </div>`;
+          </div>
+          <div class="ed-btns ed-biu">
+            <button data-a="bold" class="${o.fontWeight === "bold" ? "on" : ""}" title="Negrita"><b>B</b></button>
+            <button data-a="italic" class="${o.fontStyle === "italic" ? "on" : ""}" title="Cursiva"><i>I</i></button>
+            <button data-a="underline" class="${o.underline ? "on" : ""}" title="Subrayado"><u>U</u></button>
+          </div>
+          <label>Espaciado de letras <output>${Math.round(o.charSpacing || 0)}</output></label><input type="range" data-p="charSpacing" min="-100" max="800" step="10" value="${o.charSpacing || 0}">
+          <label>Interlineado <output>${(o.lineHeight || 1).toFixed(2)}</output></label><input type="range" data-p="lineHeight" min="0.6" max="2.2" step="0.02" value="${o.lineHeight || 1}">
+          ${efectosHTML(o)}`;
       }
+      if (isShape(o)) h += formaHTML(o);
       if (isLogo) {
         h += `<label>Cambiar logo</label><select data-p="logo">${logoOptsHtml(o.logo)}</select>
           <button data-a="replicar" class="ed-wide ed-replicar">Replicar en todas las piezas</button>
           <p class="ed-rep-hint">Mismo logo, mismo tamaño y mismo lugar en el resto de las piezas de este lote.</p>`;
       }
-      if (!isLogo) {
-        h += `<label>Color <small class="ed-colorhint"></small></label><div class="ed-sw">
+      if (!isLogo && !o.curvo && !(isShape(o) && o.degradado)) {
+        h += `<label>${isShape(o) && !isStroke(o) ? "Relleno" : "Color"} <small class="ed-colorhint"></small></label><div class="ed-sw">
           ${Object.entries(BRAND).map(([k, v]) => `<button data-color="${v}" title="${k}" style="background:${v}"></button>`).join("")}
           <label class="ed-otro" title="Otro color"><input type="color" data-colorpick value="${typeof o.fill === "string" && /^#[0-9a-f]{6}$/i.test(o.fill) ? o.fill : "#ff5c00"}"></label></div>`;
       }
@@ -327,6 +419,54 @@
         </div>`;
       if (styleClip) h += `<p class="ed-tip">Estilo copiado: tocá otro elemento y después <b>Pegar estilo</b>. (Tocá dos veces para soltarlo.)</p>`;
       if (isText) h += `<p class="ed-tip">Doble toque sobre el texto para escribir. Para resaltar palabras: seleccionalas mientras escribís y tocá un color.</p>`;
+      return h;
+    }
+
+    const isShape = o => !!o.forma;
+    const isStroke = o => ["linea", "flecha", "icono"].includes(o.forma);
+    const dots = (attr, cur) => Object.entries(BRAND).map(([k, v]) => `<button ${attr}="${v}" title="${k}" class="${(cur || "").toLowerCase() === v ? "on" : ""}" style="background:${v}"></button>`).join("");
+
+    function efectosHTML(o) {
+      const e = o.efecto || "ninguno", fs = o.fontSize;
+      const ef = { ninguno: "Ninguno", sombra: "Sombra", contorno: "Contorno", hueco: "Hueco", neon: "Neón", resaltado: "Resaltado", curvo: "Curvo" };
+      let h = `<h3>Efectos</h3><div class="ed-fx">${Object.entries(ef).map(([k, n]) => `<button data-fx="${k}" class="${e === k ? "on" : ""}"><i class="fx-${k}">Aa</i><span>${n}</span></button>`).join("")}</div>`;
+      if (e === "sombra" && o.shadow) h += `<label>Desenfoque <output>${Math.round(o.shadow.blur)}</output></label><input type="range" data-fxp="blur" min="0" max="${Math.round(fs)}" value="${o.shadow.blur}">
+        <label>Distancia <output>${Math.round(o.shadow.offsetY)}</output></label><input type="range" data-fxp="dist" min="0" max="${Math.round(fs * 0.5)}" value="${o.shadow.offsetY}">
+        <label>Color de la sombra</label><div class="ed-sw">${dots("data-fxc", o.shadow.color)}<button data-fxc="rgba(0,0,0,0.55)" title="negro suave" style="background:rgba(0,0,0,.55)"></button></div>`;
+      if ((e === "contorno" || e === "hueco") && o.stroke) h += `<label>Grosor <output>${Math.round(o.strokeWidth)}</output></label><input type="range" data-fxp="stroke" min="1" max="${Math.round(fs * 0.25)}" value="${o.strokeWidth}">
+        <label>Color del contorno</label><div class="ed-sw">${dots("data-fxc", o.stroke)}</div>`;
+      if (e === "neon" && o.shadow) h += `<label>Intensidad <output>${Math.round(o.shadow.blur)}</output></label><input type="range" data-fxp="blur" min="4" max="${Math.round(fs * 1.5)}" value="${o.shadow.blur}">
+        <label>Color del brillo</label><div class="ed-sw">${dots("data-fxc", o.shadow.color)}</div>`;
+      if (e === "resaltado") h += `<label>Color del resaltado</label><div class="ed-sw">${dots("data-fxc", o.textBackgroundColor)}</div>`;
+      return h;
+    }
+
+    function curvoHTML(o) {
+      const c = o.curvo;
+      return `<label>Texto</label><input type="text" class="ed-in" data-cv="texto" value="${esc(c.texto)}">
+        <label>Curvatura <output>${c.curva}</output></label><input type="range" data-cv="curva" min="-100" max="100" step="1" value="${c.curva}">
+        <label>Tamaño <output>${Math.round(c.size)} px</output></label><input type="range" data-cv="size" min="12" max="300" value="${c.size}">
+        <label>Espaciado de letras <output>${Math.round(c.espaciado || 0)}</output></label><input type="range" data-cv="espaciado" min="-10" max="80" value="${c.espaciado || 0}">
+        <label>Tipografía</label><select data-cv="role"><option value="title" ${c.role === "title" ? "selected" : ""}>Títulos (Netron)</option>
+          <option value="subtitle" ${c.role === "subtitle" ? "selected" : ""}>Subtítulos</option><option value="body" ${c.role === "body" ? "selected" : ""}>Texto (Jost)</option></select>
+        <label>Color</label><div class="ed-sw">${dots("data-cvc", c.fill)}</div>
+        <button class="ed-wide sec" data-a="uncurve">Quitar la curva (volver a texto normal)</button>`;
+    }
+
+    function formaHTML(o) {
+      let h = "";
+      if (!isStroke(o)) {
+        const g = o.degradado;
+        h += `<h3>Relleno</h3><div class="ed-btns"><button data-fill="solido" class="${g ? "" : "on"}">Sólido</button><button data-fill="degradado" class="${g ? "on" : ""}">Degradado</button></div>`;
+        if (g) h += `<label>Color 1</label><div class="ed-sw">${dots("data-ga", g.a)}<label class="ed-otro"><input type="color" data-gpick="a" value="${g.a}"></label></div>
+          <label>Color 2</label><div class="ed-sw">${dots("data-gb", g.b)}<label class="ed-otro"><input type="color" data-gpick="b" value="${g.b}"></label></div>
+          <label>Ángulo <output>${g.ang}°</output></label><input type="range" data-gang min="0" max="360" step="15" value="${g.ang}">`;
+      }
+      const sw = o.strokeWidth || 0;
+      h += `<h3>${isStroke(o) ? "Trazo" : "Borde"}</h3>
+        <label>Grosor <output>${Math.round(sw)}</output></label><input type="range" data-shp="strokeWidth" min="${isStroke(o) ? 1 : 0}" max="60" value="${sw}">
+        ${!isStroke(o) ? `<label>Color del borde</label><div class="ed-sw">${dots("data-shc", o.stroke)}</div>` : ""}`;
+      if (o.type === "rect") h += `<label>Esquinas redondeadas <output>${Math.round(o.rx || 0)}</output></label><input type="range" data-shp="rx" min="0" max="${Math.round(Math.min(o.width, o.height) / 2)}" value="${o.rx || 0}">`;
       return h;
     }
 
@@ -432,6 +572,62 @@
       P.querySelectorAll("[data-color]").forEach(b => b.onclick = () => paint(b.dataset.color));
       const cp = P.querySelector("[data-colorpick]");
       if (cp) cp.onchange = () => paint(cp.value);
+      // estilo de texto
+      ["charSpacing", "lineHeight"].forEach(k => {
+        const r = P.querySelector(`[data-p=${k}]`);
+        if (!r) return;
+        r.oninput = () => { o.set(k, +r.value); o.initDimensions(); r.previousElementSibling.querySelector("output").textContent = k === "lineHeight" ? (+r.value).toFixed(2) : r.value; canvas.requestRenderAll(); };
+        r.onchange = () => snapshot();
+      });
+      P.querySelectorAll("[data-fx]").forEach(b => b.onclick = () => setEffect(o, b.dataset.fx));
+      P.querySelectorAll("[data-fxp]").forEach(r => {
+        r.oninput = () => {
+          const v = +r.value, k = r.dataset.fxp;
+          if (k === "blur") o.shadow.blur = v;
+          if (k === "dist") { o.shadow.offsetY = v; o.shadow.offsetX = v * 0.6; }
+          if (k === "stroke") o.set("strokeWidth", v);
+          r.previousElementSibling.querySelector("output").textContent = Math.round(v);
+          o.dirty = true; canvas.requestRenderAll();
+        };
+        r.onchange = () => snapshot();
+      });
+      P.querySelectorAll("[data-fxc]").forEach(b => b.onclick = () => {
+        const c = b.dataset.fxc, e = o.efecto;
+        if (e === "sombra" || e === "neon") o.shadow.color = c;
+        if (e === "contorno" || e === "hueco") o.set("stroke", c);
+        if (e === "resaltado") o.set("textBackgroundColor", c);
+        o.dirty = true; canvas.requestRenderAll(); snapshot(); panel();
+      });
+      // texto curvo
+      P.querySelectorAll("[data-cv]").forEach(el => {
+        const k = el.dataset.cv;
+        const upd = () => { o.curvo[k] = el.type === "range" ? +el.value : el.value; if (k === "role") o.curvo.family = FAMILIES[el.value]; redrawCurve(o); };
+        if (el.type === "range") { el.oninput = () => { el.previousElementSibling.querySelector("output").textContent = el.value + (k === "size" ? " px" : ""); upd(); }; el.onchange = () => snapshot(); }
+        else { el.oninput = el.tagName === "SELECT" ? null : upd; el.onchange = () => { upd(); snapshot(); }; }
+      });
+      P.querySelectorAll("[data-cvc]").forEach(b => b.onclick = () => { o.curvo.fill = b.dataset.cvc; redrawCurve(o).then(() => { snapshot(); panel(); }); });
+      // formas
+      P.querySelectorAll("[data-fill]").forEach(b => b.onclick = () => {
+        if (b.dataset.fill === "degradado") { const base = typeof o.fill === "string" ? o.fill : BRAND.naranja; o.degradado = { a: base, b: BRAND.oscuro, ang: 90 }; o.set("fill", gradient(o.degradado)); }
+        else { const c = o.degradado ? o.degradado.a : BRAND.naranja; o.degradado = null; o.set("fill", c); }
+        canvas.requestRenderAll(); snapshot(); panel();
+      });
+      const setG = (k, v) => { o.degradado[k] = v; o.set("fill", gradient(o.degradado)); o.dirty = true; canvas.requestRenderAll(); };
+      P.querySelectorAll("[data-ga]").forEach(b => b.onclick = () => { setG("a", b.dataset.ga); snapshot(); panel(); });
+      P.querySelectorAll("[data-gb]").forEach(b => b.onclick = () => { setG("b", b.dataset.gb); snapshot(); panel(); });
+      P.querySelectorAll("[data-gpick]").forEach(i => i.onchange = () => { setG(i.dataset.gpick, i.value); snapshot(); panel(); });
+      const ga = P.querySelector("[data-gang]");
+      if (ga) { ga.oninput = () => { setG("ang", +ga.value); ga.previousElementSibling.querySelector("output").textContent = ga.value + "°"; }; ga.onchange = () => snapshot(); }
+      P.querySelectorAll("[data-shp]").forEach(r => {
+        r.oninput = () => {
+          const k = r.dataset.shp, v = +r.value;
+          if (k === "rx") o.set({ rx: v, ry: v }); else { o.set(k, v); if (!o.stroke && v > 0) o.set("stroke", BRAND.oscuro); }
+          r.previousElementSibling.querySelector("output").textContent = Math.round(v);
+          canvas.requestRenderAll();
+        };
+        r.onchange = () => { snapshot(); if (r.dataset.shp === "strokeWidth") panel(); };
+      });
+      P.querySelectorAll("[data-shc]").forEach(b => b.onclick = () => { o.set("stroke", b.dataset.shc); if (!o.strokeWidth) o.set("strokeWidth", 6 * s); canvas.requestRenderAll(); snapshot(); panel(); });
       // posición
       P.querySelectorAll("[data-al]").forEach(b => b.onclick = () => align(b.dataset.al));
       P.querySelectorAll("[data-ord]").forEach(b => b.onclick = () => order(b.dataset.ord));
@@ -472,7 +668,8 @@
         if (t.type === "textbox") {
           if (t.isEditing && t.selectionStart !== t.selectionEnd) t.setSelectionStyles({ fill: color });
           else { t.set("fill", color); t.styles = {}; }
-        } else if (t.type === "rect" || t.type === "circle" || t.type === "path" || t.type === "polygon") t.set("fill", color);
+        } else if (isStroke(t)) t.set("stroke", color);
+        else if (t.forma || t.type === "rect" || t.type === "circle" || t.type === "path" || t.type === "polygon" || t.type === "triangle") { t.degradado = null; t.set("fill", color); }
         else if (t.type === "image") {
           const src = t.getSrc();
           if (src.includes("/elemento/")) {
@@ -485,6 +682,57 @@
         t.dirty = true;
       }
       canvas.requestRenderAll(); snapshot();
+    }
+
+    function setEffect(o, fx) {
+      if (fx === "curvo") return curve(o);
+      const fs = o.fontSize, keepFill = o.efecto === "hueco" || o.efecto === "neon" ? (o._fillPrev || BRAND.blanco) : o.fill;
+      o.set({ shadow: null, stroke: null, strokeWidth: 0, textBackgroundColor: "", paintFirst: "fill", fill: keepFill });
+      if (fx === "sombra") o.set("shadow", new fabric.Shadow({ color: "rgba(0,0,0,0.55)", blur: fs * 0.18, offsetX: fs * 0.05, offsetY: fs * 0.08 }));
+      if (fx === "contorno") o.set({ stroke: BRAND.naranja, strokeWidth: Math.max(2, fs * 0.06), paintFirst: "stroke", strokeLineJoin: "round" });
+      if (fx === "hueco") { o._fillPrev = keepFill; o.set({ fill: "rgba(0,0,0,0)", stroke: typeof keepFill === "string" ? keepFill : BRAND.blanco, strokeWidth: Math.max(2, fs * 0.04), strokeLineJoin: "round" }); }
+      if (fx === "neon") { o._fillPrev = keepFill; o.set({ fill: "#fff7f0", shadow: new fabric.Shadow({ color: BRAND.naranja, blur: fs * 0.55, offsetX: 0, offsetY: 0 }) }); }
+      if (fx === "resaltado") o.set({ textBackgroundColor: BRAND.naranja });
+      o.efecto = fx === "ninguno" ? null : fx;
+      o.styles = o.styles || {};
+      o.dirty = true; canvas.requestRenderAll(); snapshot(); panel();
+    }
+
+    // Curvar: el texto pasa a ser una imagen que se vuelve a dibujar con cada cambio
+    async function curve(t) {
+      const c = { texto: t.text.replace(/\n/g, " "), family: t.fontFamily, role: t.role || "subtitle", size: t.fontSize, fill: typeof t.fill === "string" ? t.fill : BRAND.blanco,
+        curva: 45, espaciado: (t.charSpacing || 0) / 1000 * t.fontSize, original: t.toObject(EXTRA) };
+      const img = await makeCurve(c);
+      const cx = t.getCenterPoint();
+      img.set({ angle: t.angle, opacity: t.opacity, name: "Texto curvo" });
+      img.setPositionByOrigin(cx, "center", "center");
+      const i = canvas.getObjects().indexOf(t);
+      batch(() => { canvas.remove(t); canvas.add(img); canvas.moveTo(img, i); });
+      canvas.setActiveObject(img); canvas.requestRenderAll(); snapshot(); panel();
+    }
+    async function makeCurve(c) {
+      const r = curvedText(c);
+      const img = await loadImage(r.url);
+      img.curvo = c;
+      return img;
+    }
+    async function redrawCurve(o) {
+      const center = o.getCenterPoint(), r = curvedText(o.curvo);
+      await new Promise(ok => o.setSrc(r.url, ok));
+      o.set({ scaleX: 1, scaleY: 1 });
+      o.setPositionByOrigin(center, "center", "center"); o.setCoords();
+      canvas.requestRenderAll();
+    }
+    async function uncurve() {
+      const o = active();
+      if (!o || !o.curvo) return;
+      const c = o.curvo;
+      const [t] = await new Promise(ok => fabric.util.enlivenObjects([{ ...c.original, text: c.texto, fill: c.fill, fontSize: c.size, fontFamily: c.family, role: c.role }], ok));
+      t.efecto = null;
+      t.setPositionByOrigin(o.getCenterPoint(), "center", "center");
+      const i = canvas.getObjects().indexOf(o);
+      batch(() => { canvas.remove(o); canvas.add(t); canvas.moveTo(t, i); });
+      canvas.setActiveObject(t); canvas.requestRenderAll(); snapshot(); panel();
     }
 
     // alinear: un elemento → a la página; varios → entre ellos (dentro del recuadro de la selección)
@@ -566,13 +814,54 @@
       if (k === "barra") o = new fabric.Rect({ width: 90 * s, height: 10 * s, fill: BRAND.naranja, name: "Barra" });
       if (k === "esquinero") { o = await loadImage(`/elemento/esquinero.png?c=tl&l=${Math.round(110 * s)}&g=${Math.round(10 * s)}&color=ff5c00`); o.set({ name: "Esquinero" }); }
       if (k === "puntos") { o = await loadImage(`/elemento/puntos.png?cols=6&rows=4&gap=${Math.round(28 * s)}&r=${Math.round(4 * s)}&color=ff5c00`); o.set({ name: "Puntos" }); }
+      const S = 300 * s;
+      if (k === "rect") o = new fabric.Rect({ width: S, height: S * 0.7, fill: BRAND.naranja, name: "Rectángulo", forma: "rect" });
+      if (k === "redondeado") o = new fabric.Rect({ width: S, height: S * 0.7, rx: 40 * s, ry: 40 * s, fill: BRAND.naranja, name: "Rectángulo redondeado", forma: "rect" });
+      if (k === "circulo") o = new fabric.Circle({ radius: S / 2, fill: BRAND.naranja, name: "Círculo", forma: "circulo" });
+      if (k === "triangulo") o = new fabric.Triangle({ width: S, height: S * 0.87, fill: BRAND.naranja, name: "Triángulo", forma: "triangulo" });
+      if (k === "estrella5") { o = new fabric.Path(ICONOS.estrella, { fill: BRAND.naranja, name: "Estrella", forma: "estrella" }); o.scale(S / 18); }
+      if (k === "linea") o = new fabric.Line([0, 0, S * 1.3, 0], { stroke: BRAND.naranja, strokeWidth: 8 * s, strokeLineCap: "round", name: "Línea", forma: "linea" });
+      if (k === "flecha") { o = new fabric.Path("M2 12h20M15 5l7 7-7 7", { fill: "", stroke: BRAND.naranja, strokeWidth: 2.2, strokeLineCap: "round", strokeLineJoin: "round", name: "Flecha", forma: "flecha" }); o.scale(S / 22); }
+      if (k.startsWith("icono:")) {
+        const n = k.slice(6);
+        o = new fabric.Path(ICONOS[n], { fill: "", stroke: BRAND.naranja, strokeWidth: 1.8, strokeLineCap: "round", strokeLineJoin: "round", name: "Ícono " + n, forma: "icono" });
+        o.scale(160 * s / 24);
+      }
+      if (k.startsWith("combo-")) return addCombo(k.slice(6));
       if (!o) return;
       canvas.add(center(o)); canvas.setActiveObject(o); canvas.requestRenderAll();
     }
 
+    // Combinaciones de texto prediseñadas (quedan elegidas juntas; se editan por separado)
+    function addCombo(kind) {
+      const T = (txt, o) => new fabric.Textbox(txt, { fill: BRAND.blanco, textAlign: "center", ...o });
+      let objs = [];
+      if (kind === "bajada") objs = [
+        T("GRAN TÍTULO", { width: 860 * s, fontFamily: FAMILIES.title, role: "title", fontSize: 120 * s, name: "Título", top: 0 }),
+        new fabric.Rect({ width: 90 * s, height: 10 * s, fill: BRAND.naranja, name: "Barra", left: 385 * s, top: 150 * s }),
+        T("Una bajada corta que explica", { width: 860 * s, fontFamily: FAMILIES.subtitle, role: "subtitle", fontSize: 48 * s, name: "Bajada", top: 185 * s })];
+      if (kind === "cita") objs = [
+        T("“", { width: 200 * s, fontFamily: FAMILIES.subtitle, role: "subtitle", fontSize: 260 * s, fill: BRAND.naranja, name: "Comillas", left: 330 * s, top: 0 }),
+        T("La producción buena es la que nadie nota", { width: 800 * s, fontFamily: FAMILIES.subtitle, role: "subtitle", fontSize: 64 * s, name: "Frase", top: 200 * s }),
+        T("— NOMBRE, CARGO", { width: 800 * s, fontFamily: FAMILIES.body, role: "body", fontSize: 32 * s, name: "Firma", top: 380 * s, charSpacing: 120 })];
+      if (kind === "dato") objs = [
+        T("+40K", { width: 800 * s, fontFamily: FAMILIES.title, role: "title", fontSize: 240 * s, fill: BRAND.naranja, name: "Número", top: 0 }),
+        T("asistentes en 3 días", { width: 800 * s, fontFamily: FAMILIES.subtitle, role: "subtitle", fontSize: 56 * s, name: "Qué es", top: 260 * s })];
+      if (kind === "etiqueta") objs = [
+        T(" NUEVO ", { width: 360 * s, fontFamily: FAMILIES.title, role: "title", fontSize: 56 * s, name: "Etiqueta", textBackgroundColor: BRAND.naranja, efecto: "resaltado", top: 0 })];
+      // ubicar el conjunto centrado en la pieza
+      const minL = Math.min(...objs.map(o => o.left || 0)), maxW = Math.max(...objs.map(o => (o.left || 0) + o.getScaledWidth()));
+      const maxH = Math.max(...objs.map(o => (o.top || 0) + o.getScaledHeight()));
+      const dx = (design.W - (maxW - minL)) / 2 - minL, dy = (design.H - maxH) / 2;
+      batch(() => objs.forEach(o => { o.set({ left: (o.left || 0) + dx, top: (o.top || 0) + dy }); canvas.add(o); }));
+      canvas.discardActiveObject();
+      canvas.setActiveObject(objs.length > 1 ? new fabric.ActiveSelection(objs, { canvas }) : objs[0]);
+      canvas.requestRenderAll(); panel();
+    }
+
     // --- copiar estilo (brocha) ---------------------------------------------------------
     const STYLE_KEYS = ["fill", "fontFamily", "role", "fontSize", "fontWeight", "fontStyle", "underline", "textAlign", "lineHeight",
-      "charSpacing", "stroke", "strokeWidth", "shadow", "opacity", "rx", "ry", "textBackgroundColor"];
+      "charSpacing", "stroke", "strokeWidth", "shadow", "opacity", "rx", "ry", "textBackgroundColor", "efecto", "paintFirst", "strokeLineJoin"];
     function copyStyle() {
       const o = active();
       if (!o) return;
@@ -652,6 +941,10 @@
       lock() { const o = active(); const on = !o.bloqueado; (o.type === "activeSelection" ? o.getObjects() : [o]).forEach(x => applyLock(x, on)); if (o.type === "activeSelection") applyLock(o, on); canvas.requestRenderAll(); snapshot(); panel(); },
       group() { const o = active(); if (o.type !== "activeSelection") return; const g = o.toGroup(); g.set({ name: "Grupo" }); canvas.requestRenderAll(); snapshot(); panel(); },
       ungroup() { const o = active(); if (o.type !== "group") return; o.toActiveSelection(); canvas.requestRenderAll(); snapshot(); panel(); },
+      bold() { const o = active(); o.set("fontWeight", o.fontWeight === "bold" ? "normal" : "bold"); o.initDimensions(); canvas.requestRenderAll(); snapshot(); panel(); },
+      italic() { const o = active(); o.set("fontStyle", o.fontStyle === "italic" ? "normal" : "italic"); o.initDimensions(); canvas.requestRenderAll(); snapshot(); panel(); },
+      underline() { const o = active(); o.set("underline", !o.underline); canvas.requestRenderAll(); snapshot(); panel(); },
+      uncurve,
       fliph() { const o = active(); o.set("flipX", !o.flipX); canvas.requestRenderAll(); snapshot(); },
       flipv() { const o = active(); o.set("flipY", !o.flipY); canvas.requestRenderAll(); snapshot(); },
       "page-center"() { const o = active(); moveRect(o, "hcenter", { left: 0, top: 0, width: design.W, height: design.H }); moveRect(o, "vcenter", { left: 0, top: 0, width: design.W, height: design.H }); canvas.requestRenderAll(); snapshot(); },

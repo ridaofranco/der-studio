@@ -62,6 +62,11 @@ Al generar (posteos, historias o reels) elegís el logo:
 
 Tocá cualquier imagen generada y se abre el editor. El panel tiene pestañas:
 - **Agregar**: texto, título, barra, esquinero, puntos y logos. **Elegir varios** (en el celular) para juntar elementos.
+- **Agregar** también: combinaciones de texto (título + bajada, cita, dato, etiqueta), formas (rectángulo,
+  redondeado, círculo, triángulo, estrella, línea, flecha) e íconos (ubicación, calendario, entrada, micrófono…).
+- **Efectos de texto**: sombra, contorno, hueco, neón, resaltado y **curvo** (se puede quitar la curva). Negrita,
+  cursiva, subrayado, espaciado de letras e interlineado.
+- **Formas**: relleno sólido o **degradado** (dos colores y ángulo), borde con grosor y color, esquinas redondeadas.
 - **Capas**: todos los elementos de la pieza, de adelante hacia atrás. Arrastrá para reordenar; ojo para **ocultar**,
   candado para **bloquear** (no se mueve por error).
 - **Fondo**: color liso de la pieza (lo que choca con el fondo nuevo cambia solo a un color que contraste).

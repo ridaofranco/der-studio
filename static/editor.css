@@ -102,3 +102,33 @@
   .ed-panel textarea, .ed-panel select, .ed-num input { font-size: 16px; }
   .ed-grid2 { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* entrega 2: textos, formas, íconos y efectos */
+.ed-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ed-sh svg { width: 30px; height: 30px; fill: var(--naranja); stroke: none; }
+.ed-sh svg .st, .ed-sh svg path.st { fill: none; stroke: var(--naranja); stroke-width: 2.4; }
+.ed-sh .ed-cbar { margin: 12px 0; }
+.ed-combo { gap: 2px !important; }
+.ed-combo b { font-weight: normal; line-height: 1.1; }
+.ed-combo b.t { font: 12px "DER Titulo", sans-serif; }
+.ed-combo b.q { font: 30px "DER Sub", sans-serif; color: var(--naranja); height: 20px; line-height: 30px; }
+.ed-combo b.n { font: 20px "DER Titulo", sans-serif; color: var(--naranja); }
+.ed-combo b.tag { font: 12px "DER Titulo", sans-serif; background: var(--naranja); color: #fff; padding: 3px 8px; margin: 6px 0; }
+.ed-combo small { font-size: 10.5px; color: var(--texto-suave); }
+.ed-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.ed-icons button { height: 44px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; display: grid; place-items: center; }
+.ed-icons button:hover { border-color: var(--naranja); }
+.ed-icons svg { width: 22px; height: 22px; stroke: var(--oscuro); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ed-biu button { width: 40px; font-size: 16px !important; }
+.ed-fx { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ed-fx button { display: grid; justify-items: center; gap: 3px; padding: 8px 2px 6px; border: 1px solid var(--borde); border-radius: 9px; background: #fafafa; }
+.ed-fx button.on { border-color: var(--naranja); background: #fff3eb; }
+.ed-fx button span { font-size: 11px; color: var(--texto-suave); }
+.ed-fx i { font: 22px "DER Titulo", sans-serif; font-style: normal; color: var(--oscuro); line-height: 1.2; }
+.fx-sombra { text-shadow: 2px 3px 3px rgba(0,0,0,.45); }
+.fx-contorno { -webkit-text-stroke: 1px var(--naranja); paint-order: stroke fill; }
+.fx-hueco { color: transparent !important; -webkit-text-stroke: 1px var(--oscuro); }
+.fx-neon { color: #fff7f0 !important; text-shadow: 0 0 4px var(--naranja), 0 0 9px var(--naranja); }
+.fx-resaltado { background: var(--naranja); color: #fff !important; padding: 0 3px; }
+.fx-curvo { display: inline-block; transform: rotate(-12deg); border-bottom: 2px solid var(--naranja); border-radius: 0 0 50% 50%; }
+.ed-in { width: 100%; padding: 9px 10px; border: 1px solid var(--borde); border-radius: 8px; font: 15px "DER Cuerpo", sans-serif; }
