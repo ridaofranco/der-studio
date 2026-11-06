@@ -96,8 +96,44 @@ def _limpiar(t: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", t)
 
 
+# Servicio der-textos (solo en el servidor de DER, 127.0.0.1:5061): escribe con Claude, con la voz de Franco
+# (voz.md) y con el expediente del evento que busca en trabajo/proyectos-historial. Si no está (por ejemplo en
+# una compu sin ese servicio) o falla, se usa Gemini como respaldo. NO sacar: es lo que pidió Franco el 04/11/2026.
+DER_TEXTOS = os.environ.get("DER_TEXTOS_URL", "http://127.0.0.1:5061/")
+
+
+def _claude(tema, textos, red, formato, largo, idioma, hashtags, anterior):
+    body = json.dumps({"tema": tema, "textos": textos, "red": red, "formato": formato, "largo": largo,
+                       "idioma": idioma, "hashtags": hashtags, "anterior": anterior}).encode()
+    req = urllib.request.Request(DER_TEXTOS, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=170) as r:
+        data = json.loads(r.read().decode())
+    t = (data.get("texto") or "").strip()
+    if not t:
+        raise RuntimeError("der-textos sin texto")
+    print("descripcion: claude, expediente", data.get("expediente"), flush=True)
+    return t
+
+
+def con_claude() -> bool:
+    """True si el servicio der-textos responde (entonces no hace falta la clave de Gemini)."""
+    try:
+        urllib.request.urlopen(urllib.request.Request(DER_TEXTOS, method="GET"), timeout=2)
+    except urllib.error.HTTPError:
+        return True  # responde, aunque sea con error de método
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
 def generar(tema: str, textos: list[str], red: str = "instagram", formato: str = "posteo",
             largo: str = "media", idioma: str = "es", hashtags: bool = True, anterior: str = "") -> str:
+    try:
+        return _limpiar(_claude(tema, textos, red, formato, largo, idioma, hashtags, anterior))
+    except Exception as e:  # noqa: BLE001  (sin servicio, timeout o error de Claude: respaldo con Gemini)
+        print(f"descripcion: claude no disponible ({type(e).__name__}: {str(e)[:120]}), uso Gemini", flush=True)
+    if red == "todas":
+        red = "instagram"
     k = clave()
     if not k:
         raise RuntimeError("SIN_CLAVE")

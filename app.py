@@ -697,14 +697,14 @@ def api_lote(lote):
     return jsonify(tipo="piezas", lote=d.name, disenos=designs)
 
 
-# --- Descripción para el posteo o el reel (Gemini, plan gratis) --------------------
+# --- Descripción para el posteo o el reel (Claude con la voz de Franco y el expediente; Gemini de respaldo) ---
 
 @app.get("/api/descripcion/<lote>")
 def api_descripcion_get(lote):
     d = _lote(lote)
     f = d / "descripcion.json"
     guardada = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {}
-    return jsonify(hay_clave=bool(descripcion.clave()), textos=descripcion.contexto_lote(d), **guardada)
+    return jsonify(hay_clave=bool(descripcion.clave()) or descripcion.con_claude(), textos=descripcion.contexto_lote(d), **guardada)
 
 
 @app.post("/api/descripcion")

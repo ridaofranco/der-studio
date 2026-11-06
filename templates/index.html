@@ -924,10 +924,10 @@ async function panelDescripcion(tipo, lote) {
   const sel = (name, ops, val) => `<select name="${name}">${ops.map(([v, t]) => `<option value="${v}"${v === val ? " selected" : ""}>${t}</option>`).join("")}</select>`;
   box.innerHTML = `<h2>Descripción</h2>
     <label>De qué se trata <small>(evento, cliente, ciudad, qué hicimos; lo que no pongas, no lo inventa)</small></label>
-    <textarea name="tema" rows="3" placeholder="Ej.: acreditaciones y staff del Databricks Live en el Hotel Libertador, 600 personas, todo con QR">${esc(info.tema)}</textarea>
+    <textarea name="tema" rows="3" placeholder="Ej.: acreditaciones y staff del Databricks Live en el Hotel Libertador, todo con QR">${esc(info.tema)}</textarea>
     ${info.textos && info.textos.length ? `<p class="usados">También uso los textos de ${tipo === "reel" ? "el reel" : "las piezas"}: ${info.textos.slice(0, 4).map(esc).join(" · ")}</p>` : ""}
     <div class="opts" style="margin-top:12px">
-      <div><label>Red</label>${sel("red", [["instagram", "Instagram"], ["linkedin", "LinkedIn"], ["tiktok", "TikTok"]], info.red || "instagram")}</div>
+      <div><label>Red</label>${sel("red", [["todas", "Las 3 redes (Instagram, X y LinkedIn)"], ["instagram", "Instagram"], ["x", "X"], ["linkedin", "LinkedIn"], ["tiktok", "TikTok"]], info.red || "todas")}</div>
       <div><label>Largo</label>${sel("largo", [["corta", "Corta"], ["media", "Media"], ["larga", "Larga"]], info.largo || "media")}</div>
       <div><label>Idioma</label>${sel("idioma", [["es", "Español"], ["en", "Inglés"]], info.idioma || "es")}</div>
     </div>
