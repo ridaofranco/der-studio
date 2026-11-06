@@ -119,6 +119,28 @@ BUILTIN = {
         "textos": [{"texto": "{titulo}", "desde": 0, "hasta": 1, "y": 0.82, "rol": "title", "tamano": 92, "anim": "subir"}],
         "stickers": [{"tipo": "marco", "desde": 0, "hasta": 11}],
     },
+    "mix16": {
+        "nombre": "Fotos y videos · 16", "descripcion": "16 espacios que mezclan fotos y videos: cada foto dura un golpe "
+        "corto con zoom, cada video el doble (su tramo central). Título de entrada, cortes al ritmo y cierre con la web.",
+        "musica": "auto:energico", "campos": {"titulo": "Así vivimos *el evento*", "lugar": "Buenos Aires · Noviembre 2026",
+                                                "cta": "Tu próximo evento, con DER"},
+        "espacios": [
+            _s(6, beats_video=6, anim="zoom_in", filtro="vivo", transition="zoomin", transition_seconds=0.4),
+            *[_s(2, beats_video=5, filtro="vivo", anim=("kenburns", "latido", "zoom_in", "zoom_out")[k % 4],
+                 **({"transition": "slideleft", "transition_seconds": 0.3} if k in (3, 9) else
+                    {"transition": "fadewhite", "transition_seconds": 0.25} if k == 6 else
+                    {"transition": "zoomin", "transition_seconds": 0.3} if k == 12 else {}))
+              for k in range(14)],
+            _s(6, beats_video=6, anim="zoom_out", filtro="vivo"),
+        ],
+        "transicion": ("none", 0.2),
+        "textos": [
+            {"texto": "{titulo}", "desde": 0, "hasta": 0, "y": 0.46, "rol": "title", "tamano": 100, "anim": "golpe"},
+            {"texto": "{lugar}", "desde": 0, "hasta": 1, "y": 0.16, "tamano": 42, "caja": N, "anim": "deslizar"},
+            {"texto": "{cta}", "desde": 15, "hasta": 15, "y": 0.72, "tamano": 50, "caja": O, "anim": "subir"},
+        ],
+        "stickers": [{"tipo": "marco", "desde": 1, "hasta": 14}, {"tipo": "web", "desde": 15, "hasta": 15, "y": 0.86}],
+    },
 }
 
 CAMPO_NOMBRE = {"titulo": "Título", "lugar": "Lugar y fecha", "fecha": "Fecha", "cta": "Llamado a la acción",
@@ -217,7 +239,8 @@ def build(root: Path, key: str, campos: dict, srcs: list[Path], formato: str = "
     for src, slot in zip(srcs, espacios):
         c = reels.clip_from_file(src, reels.ReelOptions(max_clip_seconds=0, photo_seconds=3))
         slot = {"transition": tr_def[0], "transition_seconds": tr_def[1], **slot}
-        want = slot.get("segundos") or slot["beats"] * beat
+        golpes = slot.get("beats_video", slot["beats"]) if c.kind == "video" else slot["beats"]
+        want = slot.get("segundos") or golpes * beat
         _apply_slot(c, slot, want)
         clips.append(c)
     # comienzo y fin de cada espacio en el reel (para ubicar los textos)
