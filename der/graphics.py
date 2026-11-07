@@ -38,7 +38,7 @@ try:  # fotos HEIC del iPhone
 except ImportError:
     pass
 
-from . import brand
+from . import brand, fondos
 from .brand import DARK, DARK_RGB, LIGHT, ORANGE, WHITE
 
 TEMPLATES = {
@@ -93,6 +93,7 @@ class Content:
     body: str = ""
     focus: str = "centro"  # centro | arriba | abajo
     logo: str = "auto"     # auto | nombre de archivo en brand/logos
+    fondo: str = "auto"    # fondo de marca (ver fondos.FONDOS): auto | liso | papel | brillo…
 
 
 # --- Helpers de texto (Pillow mide con las mismas tipografías que usa el editor) ---
@@ -1236,7 +1237,10 @@ RENDERERS = {
 def relayout(origen: dict, fmt: str, fotos_dir: Path) -> "Design":
     """La misma pieza (plantilla, fotos y textos) armada en otro formato."""
     photos = [load_photo(fotos_dir / n) for n in origen.get("fotos", [])]
-    return RENDERERS[origen["plantilla"]](fmt, photos, Content(**origen["contenido"]), first=origen.get("principal", True))
+    c = Content(**{k: v for k, v in origen["contenido"].items() if k in Content.__dataclass_fields__})
+    D = RENDERERS[origen["plantilla"]](fmt, photos, c, first=origen.get("principal", True))
+    fondos.aplicar(D, c.fondo, origen["plantilla"], bool(photos))
+    return D
 
 
 # Plantillas que hacen una pieza por foto
@@ -1297,6 +1301,7 @@ def generate(template: str, formats: list[str], photo_paths: list[Path], content
             first = i == 1 or not carousel_text_first_only
             principal = first and (main or not carousel_text_first_only)
             d = RENDERERS[tpl](fmt, [photos[k] for k in idxs], content, first=principal)
+            fondos.aplicar(d, content.fondo, tpl, bool(idxs))
             name = f"DER-{template}-{fmt}" + (f"-{i:02d}" if len(plan) > 1 else "")
             base_file = d.save_base(out_dir / name)
             # origen: con esto se puede rehacer la pieza en otro formato (como el "redimensionar" de Canva)

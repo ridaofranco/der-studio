@@ -215,6 +215,9 @@
   .tpl-thumbs label:has(input:checked) img { border-color: var(--naranja); box-shadow: 0 0 0 3px #ffd3b8; }
   .tpl-thumbs label:has(input:checked) span { color: var(--naranja); }
   .tpl-thumbs span { line-height: 1.2; }
+  .fondo-thumbs img, .fondo-thumbs .fondo-auto { aspect-ratio: 4/5; }
+  .fondo-thumbs .fondo-auto { display: grid; place-items: center; border-radius: 8px; border: 2px solid var(--borde); background: repeating-linear-gradient(135deg, #333 0 14px, #ff5c00 14px 28px, #f0f0f0 28px 42px); color: #fff; font: 14px "DER Titulo", sans-serif; text-shadow: 0 1px 3px #000; }
+  .fondo-thumbs label:has(input:checked) .fondo-auto { border-color: var(--naranja); box-shadow: 0 0 0 3px #ffd3b8; }
   @media (max-width: 600px) { .tpl-thumbs { grid-template-columns: repeat(3, 1fr); } }
   .pg-aviso { background: #fff3eb; border-left: 4px solid var(--naranja); border-radius: 6px; padding: 10px 12px; font-size: 13.5px; margin: -4px 0 14px;
     display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
@@ -265,6 +268,15 @@
         {% endfor %}
       </div>
       <p class="hint" id="plantillaAyuda"></p>
+
+      <label>Fondo <small>— para que las de texto no queden en un color liso</small></label>
+      <div class="tpl-thumbs fondo-thumbs" id="fondoPick">
+        {% for key, name in fondos.items() %}
+        <label><input type="radio" name="fondo" value="{{ key }}" {% if key == "auto" %}checked{% endif %}>
+          {% if key == "auto" %}<span class="fondo-auto">AUTO</span>{% else %}<img data-fondo="{{ key }}" alt="" loading="lazy">{% endif %}<span>{{ name }}</span></label>
+        {% endfor %}
+      </div>
+      <p class="hint" id="fondoAyuda"></p>
 
       <label>Formatos</label>
       <div class="chips">
@@ -1130,6 +1142,17 @@ const AYUDA_PLANTILLA = {{ template_hints|tojson }};
 const pintarAyuda = () => { const r = document.querySelector("input[name=plantilla]:checked"); $("#plantillaAyuda").textContent = r ? AYUDA_PLANTILLA[r.value] || "" : ""; };
 document.querySelectorAll("input[name=plantilla]").forEach(r => r.addEventListener("change", pintarAyuda));
 pintarAyuda();
+// fondos: las miniaturas se muestran en el tono de la plantilla elegida (oscuro, claro o naranja)
+const FONDOS = {{ fondos|tojson }}, FONDO_AUTO = {{ fondo_auto|tojson }}, TONOS = {{ tonos|tojson }};
+const pintarFondos = () => {
+  const r = document.querySelector("#fGraficos input[name=plantilla]:checked"), tpl = r ? r.value : "";
+  const tono = TONOS[tpl] || "oscuro";
+  document.querySelectorAll("#fondoPick img[data-fondo]").forEach(im => { im.src = `/fondo-muestra/${im.dataset.fondo}.jpg?tono=${tono}`; });
+  const auto = FONDO_AUTO[tpl];
+  $("#fondoAyuda").textContent = auto ? `Automático = ${FONDOS[auto]} para esta plantilla.` : "Automático = como viene la plantilla. En las de foto, el fondo se ve donde no hay foto.";
+};
+document.querySelectorAll("#fGraficos input[name=plantilla]").forEach(r => r.addEventListener("change", pintarFondos));
+pintarFondos();
 
 let ESTADO = { logos: [] };
 const logoSrc = key => "/logos/ver/" + encodeURIComponent(key).replace("%3A", ":");

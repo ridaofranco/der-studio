@@ -23,7 +23,7 @@ import shutil
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
-from der import aviso, brand, carrusel, compose, descripcion, graphics, plantillas, reels, updater
+from der import aviso, brand, carrusel, compose, descripcion, fondos, graphics, plantillas, reels, updater
 
 ROOT = Path(__file__).resolve().parent
 OUT_DIR = ROOT / "salidas"
@@ -214,7 +214,8 @@ def _zip(files: list[Path], dest: Path) -> Path:
 def index():
     return render_template("index.html", templates=graphics.TEMPLATES, photo_templates=sorted(graphics.PHOTO_TEMPLATES), music_styles=list(reels.music.STYLES),
                            photo_styles=carrusel.PHOTO_STYLES,
-                           transitions=reels.TRANSITIONS, template_hints=graphics.TEMPLATE_HINTS)
+                           transitions=reels.TRANSITIONS, template_hints=graphics.TEMPLATE_HINTS,
+                           fondos=fondos.FONDOS, fondo_auto=fondos.AUTO, tonos=fondos.TONO_PLANTILLA)
 
 
 @app.get("/api/estado")
@@ -234,6 +235,7 @@ def api_graficos():
             body=request.form.get("cuerpo", "").strip(),
             focus=request.form.get("enfoque", "centro"),
             logo=request.form.get("logo", "auto"),
+            fondo=request.form.get("fondo", "auto") if request.form.get("fondo") in fondos.FONDOS else "auto",
         )
         if template not in graphics.PHOTO_TEMPLATES and not (content.title or content.subtitle or content.body):
             return jsonify(error="Escribí al menos un título o un texto."), 400
@@ -1142,6 +1144,39 @@ def plantilla_muestra(tpl):
         img.thumbnail((300, 375))
         img.save(f, quality=82)
     return send_from_directory(d, f.name, max_age=3600)
+
+
+@app.get("/fondo-muestra/<kind>.jpg")
+def fondo_muestra(kind):
+    """Miniatura de un fondo de marca en el tono pedido (oscuro, claro o naranja)."""
+    if kind not in fondos.FONDOS or kind in ("auto",):
+        abort(404)
+    t = request.args.get("tono") if request.args.get("tono") in fondos.COLOR_TONO else "oscuro"
+    d = OUT_DIR / ".muestras"
+    d.mkdir(parents=True, exist_ok=True)
+    firma = f"{int((ROOT / 'der' / 'fondos.py').stat().st_mtime)}-{len(brand.list_patrones())}"
+    f = d / f"fondo-{kind}-{t}-{firma}.jpg"
+    if not f.exists():
+        W, H = brand.FORMATS["post"]
+        design = {"W": W, "H": H, "bg": fondos.COLOR_TONO[t], "layers": fondos.capas(kind, W, H, fondos.COLOR_TONO[t])}
+        from PIL import Image as PILImage
+        tmp = d / "tmp"
+        tmp.mkdir(exist_ok=True)
+        PILImage.new("RGBA", (W, H), (0, 0, 0, 0)).save(tmp / "vacio.png")
+        img = compose.compose(design, tmp / "vacio.png")
+        img.thumbnail((240, 300))
+        img.save(f, quality=84)
+    return send_from_directory(d, f.name, max_age=3600)
+
+
+@app.get("/api/fondo-capas")
+def api_fondo_capas():
+    """Capas de un fondo de marca para el editor (pestaña Fondo → Fondos DER)."""
+    kind = request.args.get("fondo", "")
+    if kind not in fondos.FONDOS:
+        abort(400)
+    W, H = int(request.args.get("W", 1080)), int(request.args.get("H", 1350))
+    return jsonify(capas=fondos.capas(kind, W, H, request.args.get("bg") or brand.DARK), prefijo=fondos.PREFIJO)
 
 
 @app.get("/patron/<name>")

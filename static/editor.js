@@ -15,6 +15,8 @@
   // Las piezas se diseñan en 1080 px y se entregan al doble (igual que el servidor, compose.SALIDA):
   // Fabric vuelve a dibujar textos, formas y fotos a ese tamaño, no agranda la imagen.
   const SALIDA = 2;
+  const FONDOS_DER = [["liso", "Liso"], ["papel", "Papel"], ["brillo", "Brillo naranja"], ["degrade", "Degradé"], ["modulos", "Módulos DER"],
+    ["patron", "Patrón DER"], ["ondas", "Ondas"], ["grilla", "Grilla de puntos"], ["rayas", "Rayas"]];
   const BRAND = { naranja: "#ff5c00", oscuro: "#333333", claro: "#f0f0f0", blanco: "#ffffff" };
   // paleta de los patrones de la marca (para las formas DER)
   const PALETA = { naranja: "#ff5c00", "naranja claro": "#f58b22", oscuro: "#333333", negro: "#1b1b1b", gris: "#8a8889", claro: "#f0f0f0" };
@@ -67,7 +69,7 @@
       return new fabric.Rect({ left: l.x, top: l.y, width: l.w, height: l.h, fill: l.color, name: l.name, forma: "rect",
         rx: l.rx || 0, ry: l.rx || 0, stroke: l.stroke || null, strokeWidth: l.strokeWidth || 0, ...common,
         shadow: l.shadow ? new fabric.Shadow({ color: "rgba(0,0,0,0.3)", blur: 28, offsetX: 10, offsetY: 16 }) : null,
-        ...(l.gradient ? { degradado: { ...l.gradient }, fill: gradient(l.gradient) } : {}) });
+        ...(l.gradient ? { degradado: { ...l.gradient }, fill: gradient(l.gradient) } : {}), ...(l.bloqueado ? { bloqueado: true } : {}) });
     }
     const img = await loadImage(l.src);
     img.set({ left: l.x, top: l.y, scaleX: l.w / img.width, scaleY: l.h / img.height, name: l.name, logo: l.logo || null, ...common });
@@ -534,9 +536,30 @@
         <button class="ed-wide ${multi ? "on" : ""}" data-a="multi">${multi ? "✓ Elegir varios activado" : "Elegir varios"}</button>`;
     }
 
+    // fondos de marca (brillo, degradé, módulos…): capas bloqueadas al fondo de todo, se reemplazan entre sí
+    async function ponerFondoDer(kind) {
+      const bg = typeof canvas.backgroundColor === "string" ? canvas.backgroundColor : "#333333";
+      const r = await fetch(`/api/fondo-capas?fondo=${kind}&W=${design.W}&H=${design.H}&bg=${encodeURIComponent(bg)}`);
+      if (!r.ok) return toast("No se pudo cargar ese fondo.");
+      const { capas, prefijo } = await r.json();
+      canvas.getObjects().filter(o => (o.name || "").startsWith(prefijo) || (o.name === "Textura" && o.bloqueado)).forEach(o => canvas.remove(o));
+      let i = 0;
+      for (const l of capas) {
+        const o = await layerToObject(l, design);
+        canvas.add(o); canvas.moveTo(o, i++);
+        if (o.bloqueado) applyLock(o, true);
+      }
+      canvas.requestRenderAll(); snapshot();
+    }
+
     function fondoHTML() {
       const bg = typeof canvas.backgroundColor === "string" ? canvas.backgroundColor.toLowerCase() : "";
-      return `<label>Color de fondo</label><div class="ed-sw ed-bg">
+      const tono = (() => { const m = /^#?([0-9a-f]{6})$/i.exec(bg); if (!m) return "oscuro"; const n = parseInt(m[1], 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+        if (r > 200 && g > 60 && g < 150 && b < 90) return "naranja"; return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "claro" : "oscuro"; })();
+      return `<h3>Fondos DER</h3><div class="ed-fondos">${FONDOS_DER.map(([k, n]) => `<button data-fder="${k}" title="${n}">
+          ${k === "liso" ? `<i style="background:${bg || "#333"}"></i>` : `<img src="/fondo-muestra/${k}.jpg?tono=${tono}" alt="" loading="lazy">`}<span>${n}</span></button>`).join("")}</div>
+        <p class="ed-tip">Se adapta al color de fondo de la pieza: cambiá primero el color y después elegí el fondo.</p>
+        <label>Color de fondo</label><div class="ed-sw ed-bg">
           ${Object.entries(BRAND).map(([k, v]) => `<button data-bg="${v}" title="Fondo ${k}" class="${bg === v ? "on" : ""}" style="background:${v}"></button>`).join("")}
           <label class="ed-otro" title="Otro color"><input type="color" data-bgpick value="${/^#[0-9a-f]{6}$/i.test(bg) ? bg : "#333333"}"><span>Otro</span></label>
         </div><p class="ed-tip">Cambia el fondo liso de la pieza (las fotos no se tocan). Lo que queda del mismo color que el fondo pasa solo a un color que contraste.</p>
@@ -857,6 +880,7 @@
         };
         r.onchange = () => { if (!light) applyPhoto(o); canvas.requestRenderAll(); snapshot(); };
       });
+      P.querySelectorAll("[data-fder]").forEach(b => b.onclick = () => ponerFondoDer(b.dataset.fder));
       // fondo: degradado y foto de base
       P.querySelectorAll("[data-bggrad]").forEach(b => b.onclick = () => { const [a, c] = b.dataset.bggrad.split(","); bgGrad = { a, b: c }; setBgGradient(); });
       const ba = P.querySelector("[data-bgang]");
